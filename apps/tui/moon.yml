@@ -1,0 +1,64 @@
+language: 'rust'
+type: 'application'
+id: 'tui'
+
+env:
+  CARGO_TERM_COLOR: 'always'
+  DATABASE_URL: 'sqlite:adrs.db'
+
+fileGroups:
+  sources:
+    - 'src/**/*'
+    - 'Cargo.toml'
+  tests:
+    - 'tests/**/*'
+
+# Define code owners for the Ratatui app
+owners:
+  paths:
+    'src/': ['@backend-team', '@rust-experts']
+    'src/ui/': ['@tui-specialists']
+    'src/db/': ['@database-team']
+    'Cargo.toml': ['@rust-infra-team']
+    'tests/': ['@qa-team', '@backend-team']
+
+tasks:
+  build:
+    command: 'cargo build'
+    inputs:
+      - '@globs(sources)'
+  check:
+    command: 'cargo check'
+    inputs:
+      - '@globs(sources)'
+  format:
+    command: 'cargo fmt --all --check'
+    inputs:
+      - '@globs(sources)'
+      - '@globs(tests)'
+  lint:
+    command: 'cargo clippy'
+    inputs:
+      - '@globs(sources)'
+      - '@globs(tests)'
+  test:
+    command: 'cargo test'
+    inputs:
+      - '@globs(sources)'
+      - '@globs(tests)'
+
+  dev:
+    command: 'cargo run --bin ratatui_adr-gen'
+    inputs:
+      - '@globs(sources)'
+    options:
+      interactive: true
+      outputStyle: 'stream'
+
+  release:
+    command: 'cargo run --release --bin ratatui_adr-gen'
+    inputs:
+      - '@globs(sources)'
+    options:
+      interactive: true
+      outputStyle: 'stream'

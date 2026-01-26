@@ -1,0 +1,8 @@
+// App module for ratatui_adr-gen
+// Handles application state and business logic
+
+pub mod input;
+pub mod state;
+
+pub use input::handle_input;
+pub use state::{App, InputMode, InputState};
