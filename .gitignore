@@ -1,4 +1,36 @@
-
 # moon
 .moon/cache
 .moon/docker
+
+# rust / cargo
+/target
+**/*.rs.bk
+**/*.pdb
+Cargo.lock
+
+# sqlite
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# rustfmt / clippy
+**/*.rustfmt
+**/*.clippy
+
+# coverage
+*.profraw
+*.profdata
+.tarpaulin-report.html
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+.Spotlight-V100
+.Trashes
+
+# editor / tooling
+.vscode/
+.idea/
