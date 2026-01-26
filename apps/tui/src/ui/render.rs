@@ -1,14 +1,33 @@
 use crate::app::state::EditField;
 use crate::app::{state::AppScreen, App, InputMode, InputState};
 use crate::{Quadrant, Ring};
+
+fn quadrant_color(quadrant: &str) -> Color {
+    match quadrant {
+        "platforms" => Color::Rgb(0, 0, 238),
+        "languages" => Color::Cyan,
+        "tools" => Color::Yellow,
+        "techniques" => Color::Magenta,
+        _ => Color::Gray,
+    }
+}
+
+fn quadrant_color_from_option(value: Option<&str>) -> Color {
+    value.map_or(Color::Gray, quadrant_color)
+}
 use ratatui::widgets::canvas::{Canvas, Circle, Line as CanvasLine};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Modifier, Style},
+    symbols::Marker,
     text::{Line as TextLine, Span, Text},
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap},
+    widgets::{
+        Axis, Bar, BarChart, BarGroup, Block, Borders, Cell, Chart, Dataset, GraphType, Paragraph,
+        Row, Table, Tabs, Wrap,
+    },
     Frame,
 };
+use tui_piechart::{PieChart, PieSlice, Resolution};
 
 #[allow(clippy::cognitive_complexity)]
 pub fn ui(app: &App, f: &mut Frame<'_>) {
@@ -28,7 +47,7 @@ pub fn ui(app: &App, f: &mut Frame<'_>) {
     }
 
     if app.screen == AppScreen::BlipActions {
-        let area = f.size();
+        let area = f.area();
 
         // Get the selected blip
         if let Some(selected_blip) = app.blips.get(app.selected_blip_index) {
@@ -63,14 +82,20 @@ pub fn ui(app: &App, f: &mut Frame<'_>) {
                 .iter()
                 .enumerate()
                 .map(|(i, &action)| {
+                    let is_selected = i == app.blip_action_index;
+                    let style = if is_selected {
+                        Style::default()
+                            .fg(Color::Black)
+                            .bg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().fg(Color::White)
+                    };
+                    let prefix = if is_selected { ">" } else { " " };
+
                     TextLine::from(vec![
-                        Span::styled(
-                            format!("{}. ", i + 1),
-                            Style::default()
-                                .fg(Color::Yellow)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::raw(action),
+                        Span::styled(format!("{prefix} "), style),
+                        Span::styled(action, style),
                     ])
                 })
                 .collect::<Vec<_>>();
@@ -86,12 +111,19 @@ pub fn ui(app: &App, f: &mut Frame<'_>) {
             // Render help text at the bottom
             let help_text = vec![
                 Span::styled(
-                    "1-4",
+                    "↑/↓",
                     Style::default()
                         .fg(Color::Yellow)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::raw(": Select action   "),
+                Span::styled(
+                    "Enter",
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::raw(": Confirm   "),
                 Span::styled(
                     "ESC",
                     Style::default()
@@ -119,7 +151,7 @@ pub fn ui(app: &App, f: &mut Frame<'_>) {
     }
 
     if app.screen == AppScreen::EditBlip {
-        let area = f.size();
+        let area = f.area();
 
         // Get the selected blip and edit state
         if let (Some(selected_blip), Some(edit_state)) =
@@ -280,7 +312,7 @@ pub fn ui(app: &App, f: &mut Frame<'_>) {
         Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Percentage(100)])
-            .split(f.size().inner(&Margin::new(2, 1)))
+            .split(f.area().inner(Margin::new(2, 1)))
     } else {
         Layout::default()
             .direction(Direction::Vertical)
@@ -290,7 +322,7 @@ pub fn ui(app: &App, f: &mut Frame<'_>) {
                 Constraint::Length(3), // Status area
                 Constraint::Length(1), // Shortcuts hint
             ])
-            .split(f.size().inner(&Margin::new(2, 1)))
+            .split(f.area().inner(Margin::new(2, 1)))
     };
 
     if app.show_help {
@@ -424,7 +456,7 @@ pub fn ui(app: &App, f: &mut Frame<'_>) {
     f.render_widget(title_block, title_area);
 
     // Split title area for text and radar
-    let title_inner = title_area.inner(&Margin::new(1, 1));
+    let title_inner = title_area.inner(Margin::new(1, 1));
     let title_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
@@ -558,20 +590,35 @@ pub fn ui(app: &App, f: &mut Frame<'_>) {
         .block(content_block)
         .wrap(Wrap { trim: true });
 
-    // Render radar visualization if we have data
-    if app.blip_data.quadrant.is_some() && app.blip_data.ring.is_some() {
-        let content_inner = main_layout[1].inner(&Margin::new(1, 1));
+    let content_inner = main_layout[1].inner(Margin::new(1, 1));
+    let horizontal_split = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+        .split(content_inner);
 
-        // Create a horizontal split for text and radar
-        let horizontal_split = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-            .split(content_inner);
+    let left_split = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(9),
+            Constraint::Min(8),
+        ])
+        .split(horizontal_split[0]);
 
-        // Render content paragraph in the left area
-        f.render_widget(content_paragraph, horizontal_split[0]);
+    f.render_widget(content_paragraph, left_split[0]);
+    render_full_radar(app, f, left_split[1]);
 
-        // Use the right side for the radar
+    if app.input_state == InputState::WaitingForCommand {
+        let right_split = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3),
+                Constraint::Percentage(97),
+            ])
+            .split(horizontal_split[1]);
+
+        render_chart_tabs(app, f, right_split[0]);
+        render_chart_panel(app, f, right_split[1]);
+    } else if app.blip_data.quadrant.is_some() && app.blip_data.ring.is_some() {
         let radar_area = Rect {
             x: horizontal_split[1].x,
             y: horizontal_split[1].y,
@@ -588,9 +635,6 @@ pub fn ui(app: &App, f: &mut Frame<'_>) {
                 app.animation_counter,
             );
         }
-    } else {
-        // If no radar data, use the full content area
-        f.render_widget(content_paragraph, main_layout[1]);
     }
 
     // Render status area
@@ -671,7 +715,7 @@ pub fn ui(app: &App, f: &mut Frame<'_>) {
 }
 
 fn render_blips_view(app: &App, f: &mut Frame<'_>) {
-    let area = f.size();
+    let area = f.area();
 
     if app.blips.is_empty() {
         let block = Block::default()
@@ -721,8 +765,9 @@ fn render_blips_view(app: &App, f: &mut Frame<'_>) {
                 .fg(Color::White)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default()
+            Style::default().fg(quadrant_color_from_option(blip.quadrant.as_deref()))
         };
+
         Row::new(vec![
             Cell::from(blip.id.to_string()),
             Cell::from(blip.name.clone()),
@@ -734,7 +779,16 @@ fn render_blips_view(app: &App, f: &mut Frame<'_>) {
         .style(style)
     });
 
-    let table = Table::new(rows)
+    let widths = [
+        Constraint::Length(4),
+        Constraint::Length(20),
+        Constraint::Length(10),
+        Constraint::Length(12),
+        Constraint::Length(12),
+        Constraint::Length(8),
+    ];
+
+    let table = Table::new(rows, widths)
         .header(header)
         .block(
             Block::default()
@@ -745,14 +799,6 @@ fn render_blips_view(app: &App, f: &mut Frame<'_>) {
                 ))
                 .borders(Borders::ALL),
         )
-        .widths(&[
-            Constraint::Length(4),
-            Constraint::Length(20),
-            Constraint::Length(10),
-            Constraint::Length(12),
-            Constraint::Length(12),
-            Constraint::Length(8),
-        ])
         .column_spacing(1);
 
     let chunks = Layout::default()
@@ -815,7 +861,7 @@ fn render_blips_view(app: &App, f: &mut Frame<'_>) {
 }
 
 fn render_adrs_view(app: &App, f: &mut Frame<'_>) {
-    let area = f.size();
+    let area = f.area();
 
     if app.adrs.is_empty() {
         let block = Block::default()
@@ -863,7 +909,7 @@ fn render_adrs_view(app: &App, f: &mut Frame<'_>) {
                 .fg(Color::White)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default()
+            Style::default().fg(quadrant_color("platforms"))
         };
         Row::new(vec![
             Cell::from(adr.id.to_string()),
@@ -892,15 +938,16 @@ fn render_adrs_view(app: &App, f: &mut Frame<'_>) {
         },
     );
 
-    let table = Table::new(rows)
+    let widths = [
+        Constraint::Length(4),
+        Constraint::Length(20),
+        Constraint::Length(20),
+        Constraint::Length(12),
+    ];
+
+    let table = Table::new(rows, widths)
         .header(header)
         .block(Block::default().title(title).borders(Borders::ALL))
-        .widths(&[
-            Constraint::Length(4),
-            Constraint::Length(20),
-            Constraint::Length(20),
-            Constraint::Length(12),
-        ])
         .column_spacing(1);
 
     let chunks = Layout::default()
@@ -942,7 +989,7 @@ fn render_adrs_view(app: &App, f: &mut Frame<'_>) {
 }
 
 fn render_blip_details(app: &App, f: &mut Frame<'_>) {
-    let area = f.size();
+    let area = f.area();
 
     let Some(blip) = app.blips.get(app.selected_blip_index) else {
         return;
@@ -955,6 +1002,7 @@ fn render_blip_details(app: &App, f: &mut Frame<'_>) {
 
     let lines = vec![
         TextLine::from(format!("Name: {}", blip.name)),
+
         TextLine::from(format!(
             "Ring: {}",
             blip.ring.clone().unwrap_or_else(|| "(none)".to_string())
@@ -1067,6 +1115,431 @@ pub fn render_mini_radar(f: &mut Frame<'_>, area: Rect, animation: f64) {
     );
 }
 
+fn render_full_radar(app: &App, f: &mut Frame<'_>, area: Rect) {
+    let blips = &app.blips;
+    if area.width < 8 || area.height < 6 {
+        return;
+    }
+
+    let block = Block::default()
+        .title("Tech Radar")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    if blips.is_empty() {
+        let paragraph = Paragraph::new("No blips available")
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::Gray));
+        f.render_widget(paragraph, inner);
+        return;
+    }
+
+    let size = inner.width.min(inner.height);
+    let square = Rect {
+        x: inner.x + (inner.width - size) / 2,
+        y: inner.y + (inner.height - size) / 2,
+        width: size,
+        height: size,
+    };
+
+    let points = blips
+        .iter()
+        .filter_map(|blip| {
+            let quadrant = match blip.quadrant.as_deref() {
+                Some("platforms") => 0,
+                Some("languages") => 1,
+                Some("tools") => 2,
+                Some("techniques") => 3,
+                _ => return None,
+            };
+            let ring = match blip.ring.as_deref() {
+                Some("adopt") => 0,
+                Some("trial") => 1,
+                Some("assess") => 2,
+                Some("hold") => 3,
+                _ => return None,
+            };
+
+            let hash = blip.name.bytes().fold(0_u64, |acc, b| acc.wrapping_mul(31) + u64::from(b));
+            let jitter = f64::from((hash % 100) as u8) / 100.0;
+
+            let quadrant_angle = std::f64::consts::FRAC_PI_2 * f64::from(quadrant);
+            let angle_offset = (jitter - 0.5) * (std::f64::consts::FRAC_PI_2 * 0.6);
+            let angle = quadrant_angle + angle_offset;
+
+            let ring_step = 0.2 + (f64::from(ring) * 0.18);
+            let radius = ring_step + (jitter * 0.1);
+
+            Some((blip, angle, radius))
+        })
+        .collect::<Vec<_>>();
+
+    f.render_widget(
+        Canvas::default()
+            .paint(|ctx| {
+                let width = f64::from(square.width);
+                let height = f64::from(square.height);
+                let center_x = width / 2.0;
+                let center_y = height / 2.0;
+                let max_radius = width.min(height) / 2.0 * 0.9;
+
+                for i in 1..=4 {
+                    let ring_radius = max_radius * (f64::from(i) / 4.0);
+                    ctx.draw(&Circle {
+                        x: center_x,
+                        y: center_y,
+                        radius: ring_radius,
+                        color: Color::DarkGray,
+                    });
+                }
+
+                ctx.draw(&CanvasLine {
+                    x1: center_x,
+                    y1: center_y - max_radius,
+                    x2: center_x,
+                    y2: center_y + max_radius,
+                    color: Color::DarkGray,
+                });
+                ctx.draw(&CanvasLine {
+                    x1: center_x - max_radius,
+                    y1: center_y,
+                    x2: center_x + max_radius,
+                    y2: center_y,
+                    color: Color::DarkGray,
+                });
+
+                for (blip, angle, radius) in &points {
+                    let color = quadrant_color_from_option(blip.quadrant.as_deref());
+                    let x = angle.cos().mul_add(max_radius * radius, center_x);
+                    let y = angle.sin().mul_add(max_radius * radius, center_y);
+
+                    ctx.draw(&Circle {
+                        x,
+                        y,
+                        radius: max_radius * 0.035,
+                        color,
+                    });
+                }
+            })
+            .x_bounds([0.0, f64::from(square.width)])
+            .y_bounds([0.0, f64::from(square.height)]),
+        square,
+    );
+}
+
+fn render_blip_scatter(app: &App, f: &mut Frame<'_>, area: Rect) {
+    let blips = &app.blips;
+    if blips.is_empty() {
+        let block = Block::default()
+            .title("Blips Chart")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan));
+        let paragraph = Paragraph::new("No blips available")
+            .block(block)
+            .alignment(Alignment::Center);
+        f.render_widget(paragraph, area);
+        return;
+    }
+
+    let mut platforms = Vec::new();
+    let mut languages = Vec::new();
+    let mut tools = Vec::new();
+    let mut techniques = Vec::new();
+
+    for blip in blips {
+        let quadrant_label = blip.quadrant.as_deref();
+        let quadrant = match quadrant_label {
+            Some("platforms") => 1.0,
+            Some("languages") => 2.0,
+            Some("tools") => 3.0,
+            Some("techniques") => 4.0,
+            _ => continue,
+        };
+        let ring = match blip.ring.as_deref() {
+            Some("hold") => 1.0,
+            Some("assess") => 2.0,
+            Some("trial") => 3.0,
+            Some("adopt") => 4.0,
+            _ => continue,
+        };
+
+        match quadrant_label {
+            Some("platforms") => platforms.push((quadrant, ring)),
+            Some("languages") => languages.push((quadrant, ring)),
+            Some("tools") => tools.push((quadrant, ring)),
+            Some("techniques") => techniques.push((quadrant, ring)),
+            _ => {}
+        }
+    }
+
+    let datasets = vec![
+        Dataset::default()
+            .name("Platforms")
+            .marker(Marker::Dot)
+            .graph_type(GraphType::Scatter)
+            .style(Style::default().fg(quadrant_color("platforms")))
+            .data(&platforms),
+        Dataset::default()
+            .name("Languages")
+            .marker(Marker::Dot)
+            .graph_type(GraphType::Scatter)
+            .style(Style::default().fg(quadrant_color("languages")))
+            .data(&languages),
+        Dataset::default()
+            .name("Tools")
+            .marker(Marker::Dot)
+            .graph_type(GraphType::Scatter)
+            .style(Style::default().fg(quadrant_color("tools")))
+            .data(&tools),
+        Dataset::default()
+            .name("Techniques")
+            .marker(Marker::Dot)
+            .graph_type(GraphType::Scatter)
+            .style(Style::default().fg(quadrant_color("techniques")))
+            .data(&techniques),
+    ];
+
+
+    let x_labels = vec![
+        Span::raw("Platforms"),
+        Span::raw("Languages"),
+        Span::raw("Tools"),
+        Span::raw("Techniques"),
+    ];
+    let y_labels = vec![Span::raw("Hold"), Span::raw("Assess"), Span::raw("Trial"), Span::raw("Adopt")];
+
+    let chart = Chart::new(datasets)
+        .block(
+            Block::default()
+                .title("Blips by Quadrant / Ring")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan)),
+        )
+        .x_axis(
+            Axis::default()
+                .title("Quadrant")
+                .style(Style::default().fg(Color::Gray))
+                .bounds([0.5, 4.5])
+                .labels(x_labels),
+        )
+        .y_axis(
+            Axis::default()
+                .title("Ring")
+                .style(Style::default().fg(Color::Gray))
+                .bounds([0.5, 4.5])
+                .labels(y_labels),
+        );
+
+    f.render_widget(chart, area);
+}
+
+fn render_chart_tabs(app: &App, f: &mut Frame<'_>, area: Rect) {
+    let titles = ["Scatter", "Types"]
+        .iter()
+        .map(|title| TextLine::from(*title))
+        .collect::<Vec<_>>();
+
+    let tabs = Tabs::new(titles)
+        .select(app.chart_tab_index)
+        .style(Style::default().fg(Color::Gray))
+        .highlight_style(
+            Style::default()
+                .fg(Color::Rgb(0, 0, 238))
+                .add_modifier(Modifier::BOLD),
+        )
+        .divider(Span::raw("|"));
+
+    f.render_widget(tabs, area);
+}
+
+fn render_chart_panel(app: &App, f: &mut Frame<'_>, area: Rect) {
+    let chart_split = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(65), Constraint::Percentage(35)])
+        .split(area.inner(Margin::new(0, 1)));
+
+    if app.chart_tab_index == 0 {
+        render_blip_scatter(app, f, chart_split[0]);
+        render_ring_barchart(app, f, chart_split[1]);
+    } else {
+        render_blip_barchart(app, f, chart_split[0]);
+        render_ring_piechart(app, f, chart_split[1]);
+    }
+}
+
+fn render_blip_barchart(app: &App, f: &mut Frame<'_>, area: Rect) {
+    if app.blips.is_empty() {
+        let block = Block::default()
+            .title("Blip Types")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan));
+        let paragraph = Paragraph::new("No blips available")
+            .block(block)
+            .alignment(Alignment::Center);
+        f.render_widget(paragraph, area);
+        return;
+    }
+
+    let mut counts = [0_u64; 4];
+    for blip in &app.blips {
+        let index = match blip.quadrant.as_deref() {
+            Some("platforms") => 0,
+            Some("languages") => 1,
+            Some("tools") => 2,
+            Some("techniques") => 3,
+            _ => continue,
+        };
+        counts[index] += 1;
+    }
+
+    let labels = ["Platforms", "Languages", "Tools", "Techniques"];
+    let bar_colors = [
+        quadrant_color("platforms"),
+        quadrant_color("languages"),
+        quadrant_color("tools"),
+        quadrant_color("techniques"),
+    ];
+
+    let bars: Vec<Bar<'_>> = counts
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            Bar::default()
+                .value(*value)
+                .label(TextLine::from(labels[index]))
+                .style(Style::default().fg(bar_colors[index]))
+                .value_style(Style::default().fg(Color::White).add_modifier(Modifier::BOLD))
+        })
+        .collect();
+
+    let max_value = counts.iter().copied().max().unwrap_or(0).max(1);
+
+    let chart = BarChart::default()
+        .block(
+            Block::default()
+                .title("Blip Types")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan)),
+        )
+        .data(BarGroup::default().bars(&bars))
+        .max(max_value)
+        .bar_gap(0)
+        .bar_width(6);
+
+    f.render_widget(chart, area);
+}
+
+fn render_ring_barchart(app: &App, f: &mut Frame<'_>, area: Rect) {
+    if app.blips.is_empty() {
+        let block = Block::default()
+            .title("Ring Counts")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan));
+        let paragraph = Paragraph::new("No blips available")
+            .block(block)
+            .alignment(Alignment::Center);
+        f.render_widget(paragraph, area);
+        return;
+    }
+
+    let mut counts = [0_u64; 4];
+    for blip in &app.blips {
+        let index = match blip.ring.as_deref() {
+            Some("hold") => 0,
+            Some("assess") => 1,
+            Some("trial") => 2,
+            Some("adopt") => 3,
+            _ => continue,
+        };
+        counts[index] += 1;
+    }
+
+    let labels = ["Hold", "Assess", "Trial", "Adopt"];
+    let colors = [
+        Color::Gray,
+        Color::Cyan,
+        Color::Yellow,
+        Color::Rgb(0, 0, 238),
+    ];
+
+    let bars: Vec<Bar<'_>> = counts
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            Bar::default()
+                .value(*value)
+                .label(TextLine::from(labels[index]))
+                .style(Style::default().fg(colors[index]))
+                .value_style(Style::default().fg(Color::White).add_modifier(Modifier::BOLD))
+        })
+        .collect();
+
+    let max_value = counts.iter().copied().max().unwrap_or(0).max(1);
+
+    let chart = BarChart::default()
+        .block(
+            Block::default()
+                .title("Ring Counts")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan)),
+        )
+        .data(BarGroup::default().bars(&bars))
+        .max(max_value)
+        .bar_gap(0)
+        .bar_width(6);
+
+    f.render_widget(chart, area);
+}
+
+fn render_ring_piechart(app: &App, f: &mut Frame<'_>, area: Rect) {
+    if app.blips.is_empty() {
+        let block = Block::default()
+            .title("Ring Distribution")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan));
+        let paragraph = Paragraph::new("No blips available")
+            .block(block)
+            .alignment(Alignment::Center);
+        f.render_widget(paragraph, area);
+        return;
+    }
+
+    let mut counts = [0_f64; 4];
+    for blip in &app.blips {
+        let index = match blip.ring.as_deref() {
+            Some("hold") => 0,
+            Some("assess") => 1,
+            Some("trial") => 2,
+            Some("adopt") => 3,
+            _ => continue,
+        };
+        counts[index] += 1.0;
+    }
+
+    let slices = vec![
+        PieSlice::new("Hold", counts[0], Color::Gray),
+        PieSlice::new("Assess", counts[1], Color::Cyan),
+        PieSlice::new("Trial", counts[2], Color::Yellow),
+        PieSlice::new("Adopt", counts[3], Color::Rgb(0, 0, 238)),
+    ];
+
+    let chart = PieChart::new(slices)
+        .block(
+            Block::default()
+                .title("Ring Distribution")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Cyan)),
+        )
+        .show_legend(true)
+        .show_percentages(true)
+        .resolution(Resolution::Braille);
+
+    f.render_widget(chart, area);
+}
+
+#[allow(dead_code)]
 pub fn render_radar(
     f: &mut Frame<'_>,
     area: Rect,
@@ -1074,6 +1547,7 @@ pub fn render_radar(
     ring: Option<Ring>,
     animation: f64,
 ) {
+
     f.render_widget(
         Canvas::default()
             .paint(|ctx| {

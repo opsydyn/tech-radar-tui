@@ -104,65 +104,83 @@ fn handle_view_blips_input(app: &mut App, key: KeyCode) {
 
 async fn handle_blip_actions_input(app: &mut App, key: KeyCode) {
     match key {
-        KeyCode::Char('1') => {
-            app.screen = crate::app::state::AppScreen::BlipDetails;
+        KeyCode::Up => {
+            if app.blip_action_index == 0 {
+                app.blip_action_index = 3;
+            } else {
+                app.blip_action_index -= 1;
+            }
         }
-        KeyCode::Char('2') => {
-            let Some(blip) = app.blips.get(app.selected_blip_index) else {
-                app.screen = crate::app::state::AppScreen::ViewBlips;
-                return;
-            };
+        KeyCode::Down => {
+            app.blip_action_index = (app.blip_action_index + 1) % 4;
+        }
+        KeyCode::Enter => {
+            match app.blip_action_index {
+                0 => {
+                    app.screen = crate::app::state::AppScreen::BlipDetails;
+                }
+                1 => {
+                    let Some(blip) = app.blips.get(app.selected_blip_index) else {
+                        app.screen = crate::app::state::AppScreen::ViewBlips;
+                        return;
+                    };
 
-            let blip_name = blip.name.clone();
-            let blip_quadrant = blip.quadrant.clone();
-            let blip_ring = blip.ring.clone();
-            let blip_has_adr = blip.has_adr;
+                    let blip_name = blip.name.clone();
+                    let blip_quadrant = blip.quadrant.clone();
+                    let blip_ring = blip.ring.clone();
+                    let blip_has_adr = blip.has_adr;
 
-            if blip_has_adr {
-                match app.fetch_adrs_for_blip(&blip_name).await {
-                    Ok(()) => {
-                        app.selected_adr_index = 0;
-                        app.screen = crate::app::state::AppScreen::ViewAdrs;
+                    if blip_has_adr {
+                        match app.fetch_adrs_for_blip(&blip_name).await {
+                            Ok(()) => {
+                                app.selected_adr_index = 0;
+                                app.screen = crate::app::state::AppScreen::ViewAdrs;
+                                return;
+                            }
+                            Err(e) => {
+                                app.status_message =
+                                    format!("Failed to fetch ADRs for blip: {e}");
+                            }
+                        }
+                    } else {
+                        app.input_mode = Some(InputMode::Adr);
+                        app.blip_data.name = blip_name;
+                        app.blip_data.quadrant =
+                            blip_quadrant.as_deref().and_then(|value| match value {
+                                "platforms" => Some(crate::Quadrant::Platforms),
+                                "languages" => Some(crate::Quadrant::Languages),
+                                "tools" => Some(crate::Quadrant::Tools),
+                                "techniques" => Some(crate::Quadrant::Techniques),
+                                _ => None,
+                            });
+                        app.blip_data.ring = blip_ring.as_deref().and_then(|value| match value {
+                            "hold" => Some(crate::Ring::Hold),
+                            "assess" => Some(crate::Ring::Assess),
+                            "trial" => Some(crate::Ring::Trial),
+                            "adopt" => Some(crate::Ring::Adopt),
+                            _ => None,
+                        });
+
+                        app.input_state = InputState::GeneratingFile;
+                        app.screen = crate::app::state::AppScreen::Main;
+                        app.status_message = "Generating ADR...".to_string();
                         return;
                     }
-                    Err(e) => {
-                        app.status_message =
-                            format!("Failed to fetch ADRs for blip: {e}");
+
+                    app.screen = crate::app::state::AppScreen::ViewBlips;
+                }
+                2 => {
+                    if let Some(blip) = app.blips.get(app.selected_blip_index) {
+                        app.edit_blip_state = Some(EditBlipState::from_blip(blip));
+                        app.screen = crate::app::state::AppScreen::EditBlip;
                     }
                 }
-            } else {
-                app.input_mode = Some(InputMode::Adr);
-                app.blip_data.name = blip_name;
-                app.blip_data.quadrant = blip_quadrant.as_deref().and_then(|value| match value {
-                    "platforms" => Some(crate::Quadrant::Platforms),
-                    "languages" => Some(crate::Quadrant::Languages),
-                    "tools" => Some(crate::Quadrant::Tools),
-                    "techniques" => Some(crate::Quadrant::Techniques),
-                    _ => None,
-                });
-                app.blip_data.ring = blip_ring.as_deref().and_then(|value| match value {
-                    "hold" => Some(crate::Ring::Hold),
-                    "assess" => Some(crate::Ring::Assess),
-                    "trial" => Some(crate::Ring::Trial),
-                    "adopt" => Some(crate::Ring::Adopt),
-                    _ => None,
-                });
-
-                app.input_state = InputState::GeneratingFile;
-                app.screen = crate::app::state::AppScreen::Main;
-                app.status_message = "Generating ADR...".to_string();
-                return;
-            }
-
-            app.screen = crate::app::state::AppScreen::ViewBlips;
-        }
-        KeyCode::Char('3') => {
-            if let Some(blip) = app.blips.get(app.selected_blip_index) {
-                app.edit_blip_state = Some(EditBlipState::from_blip(blip));
-                app.screen = crate::app::state::AppScreen::EditBlip;
+                _ => {
+                    app.screen = crate::app::state::AppScreen::ViewBlips;
+                }
             }
         }
-        KeyCode::Esc | KeyCode::Char('4') => {
+        KeyCode::Esc => {
             app.screen = crate::app::state::AppScreen::ViewBlips;
         }
         _ => {}
@@ -337,15 +355,25 @@ async fn handle_main_input(app: &mut App, key: KeyCode) {
 
 async fn handle_mode_selection(app: &mut App, key: KeyCode) {
     match key {
-        KeyCode::Up | KeyCode::Left => {
+        KeyCode::Up => {
             if app.input_mode_selection_index == 0 {
                 app.input_mode_selection_index = 1;
             } else {
                 app.input_mode_selection_index -= 1;
             }
         }
-        KeyCode::Down | KeyCode::Right => {
+        KeyCode::Down => {
             app.input_mode_selection_index = (app.input_mode_selection_index + 1) % 2;
+        }
+        KeyCode::Left => {
+            if app.chart_tab_index == 0 {
+                app.chart_tab_index = 1;
+            } else {
+                app.chart_tab_index -= 1;
+            }
+        }
+        KeyCode::Right => {
+            app.chart_tab_index = (app.chart_tab_index + 1) % 2;
         }
         KeyCode::Enter => {
             app.advance_state();

@@ -1,4 +1,4 @@
-.PHONY: moon-build moon-check moon-format moon-lint moon-test moon-dev moon-release dev release fmt
+.PHONY: moon-build moon-check moon-format moon-lint moon-test moon-dev moon-release dev release fmt headless
 
 moon-build:
 	moon run tui:build
@@ -28,4 +28,7 @@ release:
 
 fmt:
 	cargo fmt --manifest-path apps/tui/Cargo.toml
+
+headless:
+	cargo run --manifest-path apps/tui/Cargo.toml --bin ratatui_adr-gen
 

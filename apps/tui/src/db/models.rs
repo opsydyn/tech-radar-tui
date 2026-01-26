@@ -11,7 +11,7 @@ pub struct AdrRecord {
 }
 
 /// Represents a Blip record in the database
-#[derive(Debug, FromRow)]
+#[derive(Debug, FromRow, Clone)]
 #[allow(dead_code)]
 pub struct BlipRecord {
     pub id: i32,

@@ -174,12 +174,14 @@ pub struct App {
     pub blips: Vec<crate::db::models::BlipRecord>,
     pub selected_blip_index: usize,
     pub edit_blip_state: Option<EditBlipState>,
+    pub blip_action_index: usize,
     pub selected_adr_index: usize,
     pub adrs: Vec<crate::db::models::AdrRecord>,
     pub adr_filter_name: Option<String>,
     pub quadrant_selection_index: usize,
     pub ring_selection_index: usize,
     pub input_mode_selection_index: usize,
+    pub chart_tab_index: usize,
     pub last_checked_blip_name: Option<String>,
     pub last_blip_name_exists: bool,
 }
@@ -204,12 +206,14 @@ impl App {
             blips: Vec::new(),
             selected_blip_index: 0,
             edit_blip_state: None,
+            blip_action_index: 0,
             selected_adr_index: 0,
             adrs: Vec::new(),
             adr_filter_name: None,
             quadrant_selection_index: 0,
             ring_selection_index: 0,
             input_mode_selection_index: 0,
+            chart_tab_index: 0,
             last_checked_blip_name: None,
             last_blip_name_exists: false,
         }
@@ -226,6 +230,8 @@ impl App {
 
         // Create database pool
         self.db_pool = Some(create_database_pool().await?);
+
+        self.fetch_blips().await?;
 
         Ok(())
     }
@@ -313,14 +319,16 @@ impl App {
         self.quadrant_selection_index = 0;
         self.ring_selection_index = 0;
         self.input_mode_selection_index = 0;
+        self.chart_tab_index = 0;
         self.last_checked_blip_name = None;
         self.last_blip_name_exists = false;
         self.selected_adr_index = 0;
         self.adrs.clear();
         self.adr_filter_name = None;
+        self.blip_action_index = 0;
     }
 
-    pub async fn generate_file(&self) -> Result<PathBuf> {
+    pub async fn generate_file(&mut self) -> Result<PathBuf> {
         let target_dir = match self.input_mode {
             Some(InputMode::Adr) => &self.adrs_dir,
             Some(InputMode::Blip) => &self.blips_dir,
@@ -411,6 +419,7 @@ impl App {
                     adr_id: None,
                 };
                 insert_new_blip(pool, &blip_params).await?;
+                self.fetch_blips().await?;
             }
             None => {
                 return Err(color_eyre::eyre::eyre!("No input mode selected"));
