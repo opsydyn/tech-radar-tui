@@ -9,7 +9,8 @@ keywords = ["tui", "adr", "tech-radar"]
 categories = ["command-line-utilities"]
 
 [dependencies]
-ratatui = "0.24.0"
+ratatui = "0.29.0"
+tui-piechart = "0.2.8"
 crossterm = "0.27.0"  # Terminal backend
 tokio = { version = "1", features = ["full"] } # If you need async
 color-eyre = "0.6.2"  # Better error handling

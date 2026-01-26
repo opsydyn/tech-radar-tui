@@ -175,8 +175,50 @@ pub async fn run_headless(app: &mut App) -> Result<()> {
     eprintln!("Initializing database...");
     app.initialize_db().await?;
 
-    eprintln!("Headless mode is limited to database initialization only.");
-    eprintln!("To use full TUI features, run in an interactive terminal.");
+    render_headless_stats(app).await?;
+
+    Ok(())
+}
+
+async fn render_headless_stats(app: &App) -> Result<()> {
+    let pool = app
+        .db_pool
+        .as_ref()
+        .ok_or_else(|| color_eyre::eyre::eyre!("Database not initialized"))?;
+
+    let total_blips = crate::db::queries::count_blips(pool).await?;
+    let total_adrs = crate::db::queries::count_adrs(pool).await?;
+    let by_quadrant = crate::db::queries::count_blips_by_quadrant(pool).await?;
+    let by_ring = crate::db::queries::count_blips_by_ring(pool).await?;
+    let recent = crate::db::queries::recent_blips(pool, 5).await?;
+
+    println!("\nTech Radar Stats");
+    println!("=================");
+    println!("Total blips: {total_blips}");
+    println!("Total ADRs: {total_adrs}");
+
+    if total_blips > 0 {
+        #[allow(clippy::cast_precision_loss)]
+        let coverage = (total_adrs as f64 / total_blips as f64) * 100.0;
+        println!("ADR coverage: {coverage:.1}%");
+    }
+
+    println!("\nBlips by Quadrant:");
+    for (quadrant, count) in by_quadrant {
+        println!("- {quadrant}: {count}");
+    }
+
+    println!("\nBlips by Ring:");
+    for (ring, count) in by_ring {
+        println!("- {ring}: {count}");
+    }
+
+    println!("\nRecent Blips:");
+    for blip in recent {
+        let ring = blip.ring.unwrap_or_else(|| "(none)".to_string());
+        let quadrant = blip.quadrant.unwrap_or_else(|| "(none)".to_string());
+        println!("- {} | {} | {} | {}", blip.name, quadrant, ring, blip.created);
+    }
 
     Ok(())
 }

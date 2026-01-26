@@ -31,6 +31,50 @@ pub async fn get_adrs_by_blip_name(
     Ok(adrs)
 }
 
+pub async fn count_blips(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
+    query_scalar("SELECT COUNT(*) FROM blip")
+        .fetch_one(pool)
+        .await
+}
+
+pub async fn count_adrs(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
+    query_scalar("SELECT COUNT(*) FROM adr_log")
+        .fetch_one(pool)
+        .await
+}
+
+pub async fn count_blips_by_quadrant(pool: &SqlitePool) -> Result<Vec<(String, i64)>, sqlx::Error> {
+    let rows = query_as::<_, (String, i64)>(
+        "SELECT quadrant, COUNT(*) FROM blip WHERE quadrant IS NOT NULL GROUP BY quadrant",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows)
+}
+
+pub async fn count_blips_by_ring(pool: &SqlitePool) -> Result<Vec<(String, i64)>, sqlx::Error> {
+    let rows = query_as::<_, (String, i64)>(
+        "SELECT ring, COUNT(*) FROM blip WHERE ring IS NOT NULL GROUP BY ring",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows)
+}
+
+pub async fn recent_blips(pool: &SqlitePool, limit: i64) -> Result<Vec<BlipRecord>, sqlx::Error> {
+    let blips = query_as::<_, BlipRecord>(
+        "SELECT id, name, ring, quadrant, tag, description, created, \"hasAdr\", adr_id \
+         FROM blip ORDER BY created DESC LIMIT ?",
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(blips)
+}
+
 /// Retrieves all Blip records from the database
 #[allow(dead_code)]
 pub async fn get_blips(pool: &SqlitePool) -> Result<Vec<BlipRecord>, sqlx::Error> {
