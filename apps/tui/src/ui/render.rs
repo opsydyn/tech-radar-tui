@@ -17,6 +17,16 @@ pub fn ui(app: &App, f: &mut Frame<'_>) {
         return;
     }
 
+    if app.screen == AppScreen::ViewAdrs {
+        render_adrs_view(app, f);
+        return;
+    }
+
+    if app.screen == AppScreen::BlipDetails {
+        render_blip_details(app, f);
+        return;
+    }
+
     if app.screen == AppScreen::BlipActions {
         let area = f.size();
 
@@ -275,7 +285,7 @@ pub fn ui(app: &App, f: &mut Frame<'_>) {
         Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3), // Title area
+                Constraint::Length(6), // Title area
                 Constraint::Min(5),    // Content area
                 Constraint::Length(3), // Status area
                 Constraint::Length(1), // Shortcuts hint
@@ -315,7 +325,7 @@ pub fn ui(app: &App, f: &mut Frame<'_>) {
 
     // Create styled text for the prompt
     let input_prompt = match app.input_state {
-        InputState::WaitingForCommand => "Press 'a' for ADR or 'b' for Blip (q to quit)",
+        InputState::WaitingForCommand => "Select entry type (Use Left/Right and Enter)",
         InputState::EnteringTechnology => "Enter technology name:",
         InputState::ChoosingQuadrant => "Choose quadrant (Use Up/Down and Enter):",
         InputState::ChoosingRing => "Choose ring (Use Up/Down and Enter):",
@@ -417,7 +427,7 @@ pub fn ui(app: &App, f: &mut Frame<'_>) {
     let title_inner = title_area.inner(&Margin::new(1, 1));
     let title_chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
+        .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
         .split(title_inner);
 
     let title_paragraph = Paragraph::new(Text::from(vec![TextLine::from(vec![
@@ -449,7 +459,26 @@ pub fn ui(app: &App, f: &mut Frame<'_>) {
         TextLine::from(mode_text),
     ];
 
-    if app.input_state == InputState::ChoosingQuadrant {
+    if app.input_state == InputState::WaitingForCommand {
+        let mode_items = ["ADR", "Blip"];
+
+        for (index, label) in mode_items.iter().enumerate() {
+            let is_selected = index == app.input_mode_selection_index;
+            let style = if is_selected {
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let prefix = if is_selected { ">" } else { " " };
+            content_lines.push(TextLine::from(Span::styled(
+                format!("{prefix} {label}"),
+                style,
+            )));
+        }
+    } else if app.input_state == InputState::ChoosingQuadrant {
         let quadrant_items = [
             Quadrant::Platforms,
             Quadrant::Languages,
@@ -670,11 +699,9 @@ fn render_blips_view(app: &App, f: &mut Frame<'_>) {
             .add_modifier(Modifier::BOLD),
     );
 
-    // Calculate visible rows with scrolling
     let total_rows = app.blips.len();
     let max_visible_rows = area.height.saturating_sub(7) as usize;
 
-    // Calculate scroll offset to keep selected row visible
     let mut scroll_offset = 0;
     if total_rows > max_visible_rows {
         if app.selected_blip_index >= max_visible_rows + scroll_offset {
@@ -689,7 +716,10 @@ fn render_blips_view(app: &App, f: &mut Frame<'_>) {
     let rows = visible_blips.enumerate().map(|(i, blip)| {
         let is_selected = i + scroll_offset == app.selected_blip_index;
         let style = if is_selected {
-            Style::default().bg(Color::Blue).fg(Color::White)
+            Style::default()
+                .bg(Color::Rgb(0, 0, 238))
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default()
         };
@@ -784,29 +814,237 @@ fn render_blips_view(app: &App, f: &mut Frame<'_>) {
     f.render_widget(help_paragraph, chunks[1]);
 }
 
+fn render_adrs_view(app: &App, f: &mut Frame<'_>) {
+    let area = f.size();
+
+    if app.adrs.is_empty() {
+        let block = Block::default()
+            .title("ADR Log")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Yellow));
+        let paragraph = Paragraph::new("No ADRs found.")
+            .block(block)
+            .alignment(Alignment::Center);
+        f.render_widget(paragraph, area);
+        return;
+    }
+
+    let header = Row::new(vec![
+        Cell::from("ID"),
+        Cell::from("Title"),
+        Cell::from("Blip"),
+        Cell::from("Timestamp"),
+    ])
+    .style(
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+    );
+
+    let total_rows = app.adrs.len();
+    let max_visible_rows = area.height.saturating_sub(7) as usize;
+
+    let mut scroll_offset = 0;
+    if total_rows > max_visible_rows {
+        if app.selected_adr_index >= max_visible_rows + scroll_offset {
+            scroll_offset = app.selected_adr_index.saturating_sub(max_visible_rows) + 1;
+        } else if app.selected_adr_index < scroll_offset {
+            scroll_offset = app.selected_adr_index;
+        }
+    }
+
+    let visible_adrs = app.adrs.iter().skip(scroll_offset).take(max_visible_rows);
+
+    let rows = visible_adrs.enumerate().map(|(i, adr)| {
+        let is_selected = i + scroll_offset == app.selected_adr_index;
+        let style = if is_selected {
+            Style::default()
+                .bg(Color::Rgb(0, 0, 238))
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        Row::new(vec![
+            Cell::from(adr.id.to_string()),
+            Cell::from(adr.title.clone()),
+            Cell::from(adr.blip_name.clone()),
+            Cell::from(adr.timestamp.clone()),
+        ])
+        .style(style)
+    });
+
+    let title = app.adr_filter_name.as_ref().map_or_else(
+        || {
+            format!(
+                "ADR Log ({} of {})",
+                app.selected_adr_index + 1,
+                total_rows
+            )
+        },
+        |filter| {
+            format!(
+                "ADR Log for {} ({} of {})",
+                filter,
+                app.selected_adr_index + 1,
+                total_rows
+            )
+        },
+    );
+
+    let table = Table::new(rows)
+        .header(header)
+        .block(Block::default().title(title).borders(Borders::ALL))
+        .widths(&[
+            Constraint::Length(4),
+            Constraint::Length(20),
+            Constraint::Length(20),
+            Constraint::Length(12),
+        ])
+        .column_spacing(1);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(5), Constraint::Length(3)])
+        .split(area);
+
+    f.render_widget(table, chunks[0]);
+
+    let help_text = vec![
+        Span::styled(
+            "ESC",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(": Return to Main Menu   "),
+        Span::styled(
+            "↑/↓",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(": Navigate   "),
+        Span::styled(
+            "Enter",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(": Details"),
+    ];
+
+    let help_paragraph = Paragraph::new(TextLine::from(help_text))
+        .block(Block::default().borders(Borders::TOP))
+        .alignment(Alignment::Center);
+
+    f.render_widget(help_paragraph, chunks[1]);
+}
+
+fn render_blip_details(app: &App, f: &mut Frame<'_>) {
+    let area = f.size();
+
+    let Some(blip) = app.blips.get(app.selected_blip_index) else {
+        return;
+    };
+
+    let block = Block::default()
+        .title(format!("Blip Details: {}", blip.name))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow));
+
+    let lines = vec![
+        TextLine::from(format!("Name: {}", blip.name)),
+        TextLine::from(format!(
+            "Ring: {}",
+            blip.ring.clone().unwrap_or_else(|| "(none)".to_string())
+        )),
+        TextLine::from(format!(
+            "Quadrant: {}",
+            blip.quadrant
+                .clone()
+                .unwrap_or_else(|| "(none)".to_string())
+        )),
+        TextLine::from(format!(
+            "Tag: {}",
+            blip.tag.clone().unwrap_or_else(|| "(none)".to_string())
+        )),
+        TextLine::from(format!(
+            "ADR Linked: {}",
+            blip.adr_id
+                .map_or_else(|| "none".to_string(), |id| id.to_string())
+        )),
+    ];
+
+    let paragraph = Paragraph::new(Text::from(lines))
+        .block(block)
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(paragraph, area);
+}
+
 pub fn render_mini_radar(f: &mut Frame<'_>, area: Rect, animation: f64) {
+    if area.width < 4 || area.height < 4 {
+        return;
+    }
+
+    let size = area.width.min(area.height);
+    let square = Rect {
+        x: area.x + (area.width - size) / 2,
+        y: area.y + (area.height - size) / 2,
+        width: size,
+        height: size,
+    };
+
     f.render_widget(
         Canvas::default()
             .paint(|ctx| {
-                let width = f64::from(area.width);
-                let height = f64::from(area.height);
-                let min_dimension = width.min(height);
+                let width = f64::from(square.width);
+                let height = f64::from(square.height);
                 let center_x = width / 2.0;
                 let center_y = height / 2.0;
-                let radius = min_dimension / 2.0 * 0.8;
+                let radius = width.min(height) / 2.0 * 0.8;
 
-                // Draw a simple radar circle
-                ctx.draw(&Circle {
-                    x: center_x,
-                    y: center_y,
-                    radius,
-                    color: Color::Gray,
+                for i in 1..=3 {
+                    let ring_radius = radius * (f64::from(i) / 3.0);
+                    ctx.draw(&Circle {
+                        x: center_x,
+                        y: center_y,
+                        radius: ring_radius,
+                        color: Color::DarkGray,
+                    });
+                }
+
+                ctx.draw(&CanvasLine {
+                    x1: center_x,
+                    y1: center_y - radius,
+                    x2: center_x,
+                    y2: center_y + radius,
+                    color: Color::DarkGray,
+                });
+                ctx.draw(&CanvasLine {
+                    x1: center_x - radius,
+                    y1: center_y,
+                    x2: center_x + radius,
+                    y2: center_y,
+                    color: Color::DarkGray,
                 });
 
-                // Draw animated radar sweep
                 let angle = animation * 2.0 * std::f64::consts::PI;
                 let sweep_x = angle.cos().mul_add(radius, center_x);
                 let sweep_y = angle.sin().mul_add(radius, center_y);
+
+                let ghost_angle = angle + (std::f64::consts::PI / 18.0);
+                let ghost_x = ghost_angle.cos().mul_add(radius * 0.92, center_x);
+                let ghost_y = ghost_angle.sin().mul_add(radius * 0.92, center_y);
+
+                ctx.draw(&CanvasLine {
+                    x1: center_x,
+                    y1: center_y,
+                    x2: ghost_x,
+                    y2: ghost_y,
+                    color: Color::LightCyan,
+                });
 
                 ctx.draw(&CanvasLine {
                     x1: center_x,
@@ -816,17 +1054,16 @@ pub fn render_mini_radar(f: &mut Frame<'_>, area: Rect, animation: f64) {
                     color: Color::Cyan,
                 });
 
-                // Draw a small dot at the center
                 ctx.draw(&Circle {
                     x: center_x,
                     y: center_y,
-                    radius: radius * 0.1,
+                    radius: radius * 0.08,
                     color: Color::Cyan,
                 });
             })
-            .x_bounds([0.0, f64::from(area.width)])
-            .y_bounds([0.0, f64::from(area.height)]),
-        area,
+            .x_bounds([0.0, f64::from(square.width)])
+            .y_bounds([0.0, f64::from(square.height)]),
+        square,
     );
 }
 

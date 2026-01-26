@@ -6,6 +6,7 @@ use sqlx::FromRow;
 pub struct AdrRecord {
     pub id: i32,
     pub title: String,
+    pub blip_name: String,
     pub timestamp: String,
 }
 
@@ -22,6 +23,7 @@ pub struct BlipRecord {
     pub created: String,
     #[sqlx(rename = "hasAdr")]
     pub has_adr: bool, // SQLite stores booleans as integers, but we can use bool here
+    pub adr_id: Option<i32>,
 }
 
 /// Parameters for creating a new ADR
@@ -30,6 +32,7 @@ pub struct BlipRecord {
 pub struct AdrMetadataParams {
     pub id: i32,
     pub title: String,
+    pub blip_name: String,
     pub created: String,
 }
 
@@ -46,4 +49,5 @@ pub struct BlipMetadataParams {
     pub created: String,
     pub author: String,
     pub has_adr: String,
+    pub adr_id: Option<i32>,
 }

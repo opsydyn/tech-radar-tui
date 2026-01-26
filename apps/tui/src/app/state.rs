@@ -50,7 +50,9 @@ pub enum InputState {
 pub enum AppScreen {
     Main,
     ViewBlips,
+    ViewAdrs,
     BlipActions,
+    BlipDetails,
     EditBlip,
 }
 
@@ -172,8 +174,12 @@ pub struct App {
     pub blips: Vec<crate::db::models::BlipRecord>,
     pub selected_blip_index: usize,
     pub edit_blip_state: Option<EditBlipState>,
+    pub selected_adr_index: usize,
+    pub adrs: Vec<crate::db::models::AdrRecord>,
+    pub adr_filter_name: Option<String>,
     pub quadrant_selection_index: usize,
     pub ring_selection_index: usize,
+    pub input_mode_selection_index: usize,
     pub last_checked_blip_name: Option<String>,
     pub last_blip_name_exists: bool,
 }
@@ -198,8 +204,12 @@ impl App {
             blips: Vec::new(),
             selected_blip_index: 0,
             edit_blip_state: None,
+            selected_adr_index: 0,
+            adrs: Vec::new(),
+            adr_filter_name: None,
             quadrant_selection_index: 0,
             ring_selection_index: 0,
+            input_mode_selection_index: 0,
             last_checked_blip_name: None,
             last_blip_name_exists: false,
         }
@@ -262,7 +272,14 @@ impl App {
 
     pub fn advance_state(&mut self) {
         self.input_state = match self.input_state {
-            InputState::WaitingForCommand => InputState::EnteringTechnology,
+            InputState::WaitingForCommand => {
+                self.input_mode = match self.input_mode_selection_index {
+                    0 => Some(InputMode::Adr),
+                    1 => Some(InputMode::Blip),
+                    _ => None,
+                };
+                InputState::EnteringTechnology
+            }
             InputState::EnteringTechnology => {
                 self.quadrant_selection_index = 0;
                 InputState::ChoosingQuadrant
@@ -295,8 +312,12 @@ impl App {
         self.status_message.clear();
         self.quadrant_selection_index = 0;
         self.ring_selection_index = 0;
+        self.input_mode_selection_index = 0;
         self.last_checked_blip_name = None;
         self.last_blip_name_exists = false;
+        self.selected_adr_index = 0;
+        self.adrs.clear();
+        self.adr_filter_name = None;
     }
 
     pub async fn generate_file(&self) -> Result<PathBuf> {
@@ -343,10 +364,28 @@ impl App {
                 let adr_params = AdrMetadataParams {
                     id,
                     title: self.blip_data.name.clone(),
+                    blip_name: self.blip_data.name.clone(),
                     created: timestamp.clone(),
                 };
 
                 insert_new_adr_with_params(pool, &adr_params).await?;
+
+                if let Some(existing_blip) = self
+                    .blips
+                    .iter()
+                    .find(|blip| blip.name == self.blip_data.name)
+                {
+                    let params = BlipUpdateParams {
+                        id: existing_blip.id,
+                        name: None,
+                        ring: None,
+                        quadrant: None,
+                        tag: None,
+                        description: None,
+                        adr_id: Some(id),
+                    };
+                    update_blip(pool, &params).await?;
+                }
             }
             Some(InputMode::Blip) => {
                 if blip_exists_by_name(pool, &self.blip_data.name).await? {
@@ -369,6 +408,7 @@ impl App {
                     has_adr: "false".to_string(),
                     description: String::new(),
                     created: timestamp.clone(),
+                    adr_id: None,
                 };
                 insert_new_blip(pool, &blip_params).await?;
             }
@@ -409,6 +449,7 @@ impl App {
             r#"---
  id: "{}"
  title: "{}"
+ blip: "{}"
  date: {}
  status: "accepted"
  quadrant: "{}"
@@ -429,7 +470,13 @@ impl App {
  
  [Describe the resulting context, after applying the decision. All consequences should be listed here, not just the "positive" ones. A particular decision may have positive, negative, and neutral consequences, but all of them affect the team and project in the future.]
  "#,
-            id, self.blip_data.name, timestamp, quadrant, ring, self.blip_data.name
+            id,
+            self.blip_data.name,
+            self.blip_data.name,
+            timestamp,
+            quadrant,
+            ring,
+            self.blip_data.name
         )
     }
 
@@ -453,6 +500,7 @@ impl App {
  tags: [""]
  authors: ["{}"]
  hasAdr: false
+ adrId: null
  description: {{{{description}}}}
  created: "{}"
  ---
@@ -484,6 +532,23 @@ impl App {
         }
         Ok(())
     }
+
+    pub async fn fetch_adrs_for_blip(&mut self, blip_name: &str) -> Result<()> {
+        use crate::db::queries::{get_adrs, get_adrs_by_blip_name};
+        if let Some(pool) = &self.db_pool {
+            if blip_name.is_empty() {
+                let adrs = get_adrs(pool).await?;
+                self.adrs = adrs;
+                self.adr_filter_name = None;
+            } else {
+                let adrs = get_adrs_by_blip_name(pool, blip_name).await?;
+                self.adrs = adrs;
+                self.adr_filter_name = Some(blip_name.to_string());
+            }
+        }
+        Ok(())
+    }
+
 
     /// Updates a blip in the database and refreshes the blips list
     pub async fn update_blip(&mut self, params: BlipUpdateParams) -> Result<()> {

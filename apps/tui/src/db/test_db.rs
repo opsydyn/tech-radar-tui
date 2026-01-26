@@ -13,6 +13,7 @@ pub async fn test_database_setup() -> Result<()> {
     let adr_params = AdrMetadataParams {
         id: 1,
         title: "Test ADR".to_string(),
+        blip_name: "Test Blip".to_string(),
         created: Local::now().to_string(),
     };
 
@@ -30,6 +31,7 @@ pub async fn test_database_setup() -> Result<()> {
         created: Local::now().to_string(),
         author: "Test Author".to_string(),
         has_adr: "true".to_string(),
+        adr_id: None,
     };
 
     insert_new_blip(&pool, &blip_params).await?;

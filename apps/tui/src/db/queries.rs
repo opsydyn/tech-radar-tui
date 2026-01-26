@@ -7,10 +7,26 @@ use sqlx::query_scalar;
 /// Retrieves all ADR records from the database
 #[allow(dead_code)]
 pub async fn get_adrs(pool: &SqlitePool) -> Result<Vec<AdrRecord>, sqlx::Error> {
-    let adrs =
-        query_as::<_, AdrRecord>("SELECT id, title, timestamp FROM adr_log ORDER BY id DESC")
-            .fetch_all(pool)
-            .await?;
+    let adrs = query_as::<_, AdrRecord>(
+        "SELECT id, title, blip_name, timestamp FROM adr_log ORDER BY id DESC",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(adrs)
+}
+
+/// Retrieves ADR records filtered by blip name
+pub async fn get_adrs_by_blip_name(
+    pool: &SqlitePool,
+    blip_name: &str,
+) -> Result<Vec<AdrRecord>, sqlx::Error> {
+    let adrs = query_as::<_, AdrRecord>(
+        "SELECT id, title, blip_name, timestamp FROM adr_log WHERE blip_name = ? ORDER BY id DESC",
+    )
+    .bind(blip_name)
+    .fetch_all(pool)
+    .await?;
 
     Ok(adrs)
 }
@@ -19,7 +35,7 @@ pub async fn get_adrs(pool: &SqlitePool) -> Result<Vec<AdrRecord>, sqlx::Error> 
 #[allow(dead_code)]
 pub async fn get_blips(pool: &SqlitePool) -> Result<Vec<BlipRecord>, sqlx::Error> {
     let blips = query_as::<_, BlipRecord>(
-        "SELECT id, name, ring, quadrant, tag, description, created, \"hasAdr\" 
+        "SELECT id, name, ring, quadrant, tag, description, created, \"hasAdr\", adr_id 
          FROM blip ORDER BY id DESC",
     )
     .fetch_all(pool)
@@ -35,7 +51,7 @@ pub async fn get_blips_by_quadrant(
     quadrant: &str,
 ) -> Result<Vec<BlipRecord>, sqlx::Error> {
     let blips = query_as::<_, BlipRecord>(
-        "SELECT id, name, ring, quadrant, tag, description, created, \"hasAdr\" 
+        "SELECT id, name, ring, quadrant, tag, description, created, \"hasAdr\", adr_id 
          FROM blip 
          WHERE quadrant = ? 
          ORDER BY ring",
@@ -64,7 +80,7 @@ pub async fn get_blips_by_ring(
     ring: &str,
 ) -> Result<Vec<BlipRecord>, sqlx::Error> {
     let blips = query_as::<_, BlipRecord>(
-        "SELECT id, name, ring, quadrant, tag, description, created, \"hasAdr\" 
+        "SELECT id, name, ring, quadrant, tag, description, created, \"hasAdr\", adr_id 
          FROM blip 
          WHERE ring = ? 
          ORDER BY name",
@@ -79,7 +95,7 @@ pub async fn get_blips_by_ring(
 /// Retrieves a single Blip record by ID
 pub async fn get_blip_by_id(pool: &SqlitePool, id: i32) -> Result<BlipRecord, sqlx::Error> {
     let blip = query_as::<_, BlipRecord>(
-        "SELECT id, name, ring, quadrant, tag, description, created, \"hasAdr\" 
+        "SELECT id, name, ring, quadrant, tag, description, created, \"hasAdr\", adr_id 
          FROM blip 
          WHERE id = ?",
     )
@@ -90,6 +106,7 @@ pub async fn get_blip_by_id(pool: &SqlitePool, id: i32) -> Result<BlipRecord, sq
     Ok(blip)
 }
 
+
 /// Parameters for updating a Blip
 #[derive(Debug, Clone)]
 pub struct BlipUpdateParams {
@@ -99,22 +116,23 @@ pub struct BlipUpdateParams {
     pub quadrant: Option<String>,
     pub tag: Option<String>,
     pub description: Option<String>,
+    pub adr_id: Option<i32>,
 }
 
 /// Updates a Blip record in the database with the provided parameters
 /// Only fields that are Some will be updated, None fields will keep their current values
 pub async fn update_blip(pool: &SqlitePool, params: &BlipUpdateParams) -> Result<(), sqlx::Error> {
-    // First, get the current values
     let current = get_blip_by_id(pool, params.id).await?;
 
-    // Then update with new values or keep current ones
     query(
         "UPDATE blip 
          SET name = ?, 
              ring = ?, 
              quadrant = ?, 
              tag = ?, 
-             description = ? 
+             description = ?, 
+             adr_id = ?, 
+             hasAdr = ? 
          WHERE id = ?",
     )
     .bind(params.name.as_deref().unwrap_or(&current.name))
@@ -142,6 +160,8 @@ pub async fn update_blip(pool: &SqlitePool, params: &BlipUpdateParams) -> Result
             .as_deref()
             .unwrap_or(&current.description.unwrap_or_default()),
     )
+    .bind(params.adr_id.or(current.adr_id))
+    .bind(i32::from(params.adr_id.is_some() || current.adr_id.is_some()))
     .bind(params.id)
     .execute(pool)
     .await?;
@@ -172,7 +192,8 @@ mod tests {
                 tag TEXT,
                 description TEXT,
                 created TEXT NOT NULL,
-                hasAdr BOOLEAN DEFAULT FALSE
+                hasAdr BOOLEAN DEFAULT FALSE,
+                adr_id INTEGER
             )",
         )
         .execute(&pool)
@@ -180,8 +201,8 @@ mod tests {
 
         // Insert test data
         query(
-            "INSERT INTO blip (id, name, ring, quadrant, tag, description, created, hasAdr)
-             VALUES (1, 'Test Blip', 'trial', 'tools', 'test', 'A test blip', '2025-04-21', 0)",
+            "INSERT INTO blip (id, name, ring, quadrant, tag, description, created, hasAdr, adr_id)
+             VALUES (1, 'Test Blip', 'trial', 'tools', 'test', 'A test blip', '2025-04-21', 0, NULL)",
         )
         .execute(&pool)
         .await?;

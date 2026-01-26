@@ -12,7 +12,9 @@ pub async fn setup_database(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         "CREATE TABLE IF NOT EXISTS adr_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
-            timestamp TEXT NOT NULL
+            blip_name TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            UNIQUE(title, timestamp)
         )",
     )
     .execute(pool)
@@ -28,11 +30,48 @@ pub async fn setup_database(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             tag TEXT,
             description TEXT,
             created TEXT NOT NULL,
-            hasAdr BOOLEAN DEFAULT FALSE
+            hasAdr BOOLEAN DEFAULT FALSE,
+            adr_id INTEGER
         )",
     )
     .execute(pool)
     .await?;
+
+    ensure_column_exists(
+        pool,
+        "adr_log",
+        "blip_name",
+        "ALTER TABLE adr_log ADD COLUMN blip_name TEXT NOT NULL DEFAULT ''",
+    )
+    .await?;
+
+    ensure_column_exists(
+        pool,
+        "blip",
+        "adr_id",
+        "ALTER TABLE blip ADD COLUMN adr_id INTEGER",
+    )
+    .await?;
+
+    Ok(())
+}
+
+async fn ensure_column_exists(
+    pool: &SqlitePool,
+    table: &str,
+    column: &str,
+    alter_statement: &str,
+) -> Result<(), sqlx::Error> {
+    let count: i64 = query_scalar(&format!(
+        "SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name = ?",
+    ))
+    .bind(column)
+    .fetch_one(pool)
+    .await?;
+
+    if count == 0 {
+        query(alter_statement).execute(pool).await?;
+    }
 
     Ok(())
 }
@@ -258,9 +297,10 @@ pub async fn insert_new_adr_with_params(
     pool: &SqlitePool,
     params: &AdrMetadataParams,
 ) -> Result<(), sqlx::Error> {
-    query("INSERT INTO adr_log (id, title, timestamp) VALUES (?, ?, ?)")
+    query("INSERT INTO adr_log (id, title, blip_name, timestamp) VALUES (?, ?, ?, ?)")
         .bind(params.id)
         .bind(&params.title)
+        .bind(&params.blip_name)
         .bind(&params.created)
         .execute(pool)
         .await?;
@@ -285,8 +325,8 @@ pub async fn insert_new_blip(
 
     // Insert the blip with the appropriate hasAdr flag and explicit ID
     query(
-        "INSERT INTO blip (id, name, ring, quadrant, tag, description, created, hasAdr) \
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO blip (id, name, ring, quadrant, tag, description, created, hasAdr, adr_id) \
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(id)
     .bind(&blip_params.name)
@@ -296,6 +336,7 @@ pub async fn insert_new_blip(
     .bind(&blip_params.description)
     .bind(&blip_params.created)
     .bind(i32::from(has_adr)) // Convert bool to i32 for SQLite
+    .bind(blip_params.adr_id)
     .execute(pool)
     .await?;
 
