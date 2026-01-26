@@ -2,6 +2,7 @@ use color_eyre::Result;
 use sqlx::{query, query_as, SqlitePool};
 
 use crate::db::models::{AdrRecord, BlipRecord};
+use sqlx::query_scalar;
 
 /// Retrieves all ADR records from the database
 #[allow(dead_code)]
@@ -44,6 +45,16 @@ pub async fn get_blips_by_quadrant(
     .await?;
 
     Ok(blips)
+}
+
+/// Checks if a blip already exists by name
+pub async fn blip_exists_by_name(pool: &SqlitePool, name: &str) -> Result<bool, sqlx::Error> {
+    let exists: i64 = query_scalar("SELECT EXISTS(SELECT 1 FROM blip WHERE name = ?)")
+        .bind(name)
+        .fetch_one(pool)
+        .await?;
+
+    Ok(exists != 0)
 }
 
 /// Retrieves Blip records filtered by ring

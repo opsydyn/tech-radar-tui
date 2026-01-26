@@ -285,7 +285,7 @@ pub async fn insert_new_blip(
 
     // Insert the blip with the appropriate hasAdr flag and explicit ID
     query(
-        "INSERT INTO blip (id, name, ring, quadrant, tag, description, created, hasAdr) 
+        "INSERT INTO blip (id, name, ring, quadrant, tag, description, created, hasAdr) \
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(id)

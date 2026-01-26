@@ -1,6 +1,6 @@
 use crate::config::{get_adrs_dir, get_blips_dir, init_app_config};
 use crate::db::models::{AdrMetadataParams, BlipMetadataParams, BlipRecord};
-use crate::db::queries::{update_blip, BlipUpdateParams};
+use crate::db::queries::{blip_exists_by_name, update_blip, BlipUpdateParams};
 use crate::db::{
     create_database_pool, get_next_blip_id, get_next_id, insert_new_adr_with_params,
     insert_new_blip,
@@ -54,7 +54,7 @@ pub enum AppScreen {
     EditBlip,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum InputMode {
     Adr,
     Blip,
@@ -174,6 +174,8 @@ pub struct App {
     pub edit_blip_state: Option<EditBlipState>,
     pub quadrant_selection_index: usize,
     pub ring_selection_index: usize,
+    pub last_checked_blip_name: Option<String>,
+    pub last_blip_name_exists: bool,
 }
 
 impl App {
@@ -198,6 +200,8 @@ impl App {
             edit_blip_state: None,
             quadrant_selection_index: 0,
             ring_selection_index: 0,
+            last_checked_blip_name: None,
+            last_blip_name_exists: false,
         }
     }
 
@@ -291,6 +295,8 @@ impl App {
         self.status_message.clear();
         self.quadrant_selection_index = 0;
         self.ring_selection_index = 0;
+        self.last_checked_blip_name = None;
+        self.last_blip_name_exists = false;
     }
 
     pub async fn generate_file(&self) -> Result<PathBuf> {
@@ -343,6 +349,13 @@ impl App {
                 insert_new_adr_with_params(pool, &adr_params).await?;
             }
             Some(InputMode::Blip) => {
+                if blip_exists_by_name(pool, &self.blip_data.name).await? {
+                    return Err(color_eyre::eyre::eyre!(
+                        "Blip already exists: {}",
+                        self.blip_data.name
+                    ));
+                }
+
                 let quadrant_str = quadrant.as_str().to_string();
                 let ring_str = ring.as_str().to_string();
 

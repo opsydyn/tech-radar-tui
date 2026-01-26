@@ -1,4 +1,5 @@
 use crate::app::state::{App, EditBlipState, EditField, InputMode, InputState};
+use crate::db::queries::blip_exists_by_name;
 use crossterm::event::KeyCode;
 
 pub async fn handle_input(app: &mut App, key: KeyCode) {
@@ -254,7 +255,7 @@ async fn handle_edit_blip_input(app: &mut App, key: KeyCode) {
 async fn handle_main_input(app: &mut App, key: KeyCode) {
     match app.input_state {
         InputState::WaitingForCommand => handle_command_input(app, key).await,
-        InputState::EnteringTechnology => handle_text_input(app, key),
+        InputState::EnteringTechnology => handle_text_input(app, key).await,
         InputState::ChoosingQuadrant => handle_quadrant_selection(app, key),
         InputState::ChoosingRing => handle_ring_selection(app, key),
         InputState::GeneratingFile => {}
@@ -296,7 +297,7 @@ async fn handle_command_input(app: &mut App, key: KeyCode) {
     }
 }
 
-fn handle_text_input(app: &mut App, key: KeyCode) {
+async fn handle_text_input(app: &mut App, key: KeyCode) {
     match key {
         KeyCode::Char(c) => app.current_input.push(c),
         KeyCode::Backspace => {
@@ -304,6 +305,46 @@ fn handle_text_input(app: &mut App, key: KeyCode) {
         }
         KeyCode::Enter => {
             app.process_current_input();
+
+            if app.input_mode == Some(InputMode::Blip) {
+                if let Some(pool) = app.db_pool.as_ref() {
+                    let blip_name = app.blip_data.name.trim();
+                    if !blip_name.is_empty() {
+                        let already_checked = app
+                            .last_checked_blip_name
+                            .as_deref()
+                            == Some(blip_name);
+
+                        if !already_checked {
+                            match blip_exists_by_name(pool, blip_name).await {
+                                Ok(true) => {
+                                    app.status_message =
+                                        format!("Error: Blip already exists: {blip_name}");
+                                    app.last_checked_blip_name = Some(blip_name.to_string());
+                                    app.last_blip_name_exists = true;
+                                    return;
+                                }
+                                Ok(false) => {
+                                    app.last_checked_blip_name = Some(blip_name.to_string());
+                                    app.last_blip_name_exists = false;
+                                }
+                                Err(e) => {
+                                    app.status_message =
+                                        format!("Error: Failed to check blip name: {e}");
+                                    app.last_checked_blip_name = None;
+                                    app.last_blip_name_exists = false;
+                                    return;
+                                }
+                            }
+                        }
+
+                        if app.last_blip_name_exists {
+                            return;
+                        }
+                    }
+                }
+            }
+
             app.advance_state();
         }
         KeyCode::Esc => {

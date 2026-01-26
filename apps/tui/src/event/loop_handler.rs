@@ -145,7 +145,14 @@ impl TryFrom<(FileGenState, &FileGenEvent, &mut App)> for NextState {
             (FileGenState::Generating, FileGenEvent::Error(error)) => {
                 eprintln!("Error generating file: {error}");
                 app.status_message = format!("Error: {error}");
-                app.input_state = InputState::ChoosingRing;
+
+                if error.contains("already exists") {
+                    app.input_state = InputState::EnteringTechnology;
+                    app.current_input = app.blip_data.name.clone();
+                } else {
+                    app.input_state = InputState::ChoosingRing;
+                }
+
                 Ok(FileGenState::Error.next_state())
             }
             (FileGenState::Success | FileGenState::Error, FileGenEvent::Reset) => {

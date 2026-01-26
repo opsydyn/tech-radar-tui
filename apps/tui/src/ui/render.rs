@@ -290,7 +290,7 @@ pub fn ui(app: &App, f: &mut Frame<'_>) {
 
     // Title block with styled border
     let title_block = Block::default()
-        .title(" 📡 Tech Radar ADR Generator ")
+        .title("== Tech Radar ADR Generator ==")
         .title_style(
             Style::default()
                 .fg(Color::Cyan)
@@ -918,7 +918,7 @@ pub fn render_radar(
 
 pub fn render_help(f: &mut Frame<'_>, area: Rect) {
     let help_block = Block::default()
-        .title(" 💡 Help & Keyboard Shortcuts ")
+        .title("== Help & Keyboard Shortcuts ==")
         .title_style(
             Style::default()
                 .fg(Color::Yellow)
