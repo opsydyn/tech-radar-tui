@@ -1,19 +1,13 @@
-use crate::config::{get_adrs_dir, get_blips_dir, init_app_config};
+use crate::app::actions::AppActions;
 use crate::db::models::{AdrMetadataParams, BlipMetadataParams, BlipRecord};
-use crate::db::queries::{blip_exists_by_name, update_blip, BlipUpdateParams};
-use crate::db::{
-    create_database_pool, get_next_blip_id, get_next_id, insert_new_adr_with_params,
-    insert_new_blip,
-};
+use crate::db::queries::BlipUpdateParams;
 use crate::{Quadrant, Ring};
 use color_eyre::Result;
-use sqlx::SqlitePool;
 use std::{
-    fs,
-    io::Write,
     path::{Path, PathBuf},
     time::Instant,
 };
+
 
 #[derive(Debug)]
 pub struct BlipData {
@@ -90,26 +84,30 @@ impl EditBlipState {
     /// Create a new EditBlipState from a BlipRecord
     pub fn from_blip(blip: &BlipRecord) -> Self {
         // Determine the initial ring index based on the blip's ring value
-        let ring_index = match blip.ring.as_deref().unwrap_or("") {
-            "assess" => 1,
-            "trial" => 2,
-            "adopt" => 3,
+        let ring_index = match blip.ring {
+            Some(crate::Ring::Assess) => 1,
+            Some(crate::Ring::Trial) => 2,
+            Some(crate::Ring::Adopt) => 3,
             _ => 0,
         };
 
         // Determine the initial quadrant index based on the blip's quadrant value
-        let quadrant_index = match blip.quadrant.as_deref().unwrap_or("") {
-            "languages" => 1,
-            "tools" => 2,
-            "techniques" => 3,
+        let quadrant_index = match blip.quadrant {
+            Some(crate::Quadrant::Languages) => 1,
+            Some(crate::Quadrant::Tools) => 2,
+            Some(crate::Quadrant::Techniques) => 3,
             _ => 0,
         };
 
         Self {
             field: EditField::Name,
             name: blip.name.clone(),
-            ring: blip.ring.clone().unwrap_or_default(),
-            quadrant: blip.quadrant.clone().unwrap_or_default(),
+            ring: blip
+                .ring
+                .map_or_else(String::new, |ring| ring.as_str().to_string()),
+            quadrant: blip
+                .quadrant
+                .map_or_else(String::new, |quadrant| quadrant.as_str().to_string()),
             tag: blip.tag.clone().unwrap_or_default(),
             description: blip.description.clone().unwrap_or_default(),
             editing: false,
@@ -163,13 +161,11 @@ pub struct App {
     pub blip_data: BlipData,
     pub input_mode: Option<InputMode>,
     pub status_message: String,
-    pub adrs_dir: PathBuf,
-    pub blips_dir: PathBuf,
+    pub actions: AppActions,
     pub animation_counter: f64,
     pub last_frame: Instant,
+    pub animation_paused: bool,
     pub show_help: bool,
-    pub db_pool: Option<SqlitePool>,
-    pub author_name: String,
     pub screen: AppScreen,
     pub blips: Vec<crate::db::models::BlipRecord>,
     pub selected_blip_index: usize,
@@ -195,13 +191,11 @@ impl App {
             blip_data: BlipData::new(),
             input_mode: None,
             status_message: String::new(),
-            adrs_dir: PathBuf::from("./adrs"),
-            blips_dir: PathBuf::from("./blips"),
+            actions: AppActions::new(),
             animation_counter: 0.0,
             last_frame: Instant::now(),
+            animation_paused: false,
             show_help: false,
-            db_pool: None,
-            author_name: String::new(),
             screen: AppScreen::Main,
             blips: Vec::new(),
             selected_blip_index: 0,
@@ -220,19 +214,8 @@ impl App {
     }
 
     pub async fn initialize_db(&mut self) -> Result<()> {
-        // Initialize app configuration
-        let (_, author_name) = init_app_config()?;
-        self.author_name = author_name;
-
-        // Get directories from config
-        self.adrs_dir = get_adrs_dir();
-        self.blips_dir = get_blips_dir();
-
-        // Create database pool
-        self.db_pool = Some(create_database_pool().await?);
-
+        self.actions.initialize().await?;
         self.fetch_blips().await?;
-
         Ok(())
     }
 
@@ -240,6 +223,10 @@ impl App {
         let now = Instant::now();
         let delta = now.duration_since(self.last_frame);
         self.last_frame = now;
+
+        if self.animation_paused {
+            return;
+        }
 
         // Update animation counter (cycles between 0 and 2*PI)
         self.animation_counter += delta.as_secs_f64() * 2.0;
@@ -328,35 +315,32 @@ impl App {
         self.blip_action_index = 0;
     }
 
+    pub fn toggle_animation_pause(&mut self) {
+        self.animation_paused = !self.animation_paused;
+        self.status_message = if self.animation_paused {
+            "Animation paused".to_string()
+        } else {
+            "Animation resumed".to_string()
+        };
+    }
+
     pub async fn generate_file(&mut self) -> Result<PathBuf> {
-        let target_dir = match self.input_mode {
-            Some(InputMode::Adr) => &self.adrs_dir,
-            Some(InputMode::Blip) => &self.blips_dir,
-            None => return Err(color_eyre::eyre::eyre!("No input mode selected")),
+        let input_mode = self
+            .input_mode
+            .ok_or_else(|| color_eyre::eyre::eyre!("No input mode selected"))?;
+        let target_dir = match input_mode {
+            InputMode::Adr => self.actions.adrs_dir.clone(),
+            InputMode::Blip => self.actions.blips_dir.clone(),
         };
 
-        if !target_dir.exists() {
-            fs::create_dir_all(target_dir)?;
-        }
-
-        let pool = self
-            .db_pool
-            .as_ref()
-            .ok_or_else(|| color_eyre::eyre::eyre!("Database not initialized"))?;
-
-        // Get the appropriate ID based on input mode
-        let id = match self.input_mode {
-            Some(InputMode::Adr) => get_next_id(pool).await?,
-            Some(InputMode::Blip) => get_next_blip_id(pool).await?,
-            None => return Err(color_eyre::eyre::eyre!("No input mode selected")),
-        };
+        let id = self.actions.next_id(input_mode).await?;
 
         let timestamp = chrono::Utc::now().format("%Y-%m-%d").to_string();
 
         let sanitized_name = self.blip_data.name.replace(' ', "-").to_lowercase();
         let date_prefix = timestamp.split('T').next().unwrap_or("");
         let file_name = format!("{date_prefix}-{sanitized_name}");
-        let file_path = get_file_path(target_dir, &file_name);
+        let file_path = get_file_path(&target_dir, &file_name);
 
         let quadrant = self
             .blip_data
@@ -367,8 +351,8 @@ impl App {
             .ring
             .ok_or_else(|| color_eyre::eyre::eyre!("Ring selection missing"))?;
 
-        match self.input_mode {
-            Some(InputMode::Adr) => {
+        match input_mode {
+            InputMode::Adr => {
                 let adr_params = AdrMetadataParams {
                     id,
                     title: self.blip_data.name.clone(),
@@ -376,7 +360,7 @@ impl App {
                     created: timestamp.clone(),
                 };
 
-                insert_new_adr_with_params(pool, &adr_params).await?;
+                self.actions.insert_adr(&adr_params).await?;
 
                 if let Some(existing_blip) = self
                     .blips
@@ -392,53 +376,43 @@ impl App {
                         description: None,
                         adr_id: Some(id),
                     };
-                    update_blip(pool, &params).await?;
+
+                    self.actions.update_blip(&params).await?;
                 }
             }
-            Some(InputMode::Blip) => {
-                if blip_exists_by_name(pool, &self.blip_data.name).await? {
+            InputMode::Blip => {
+                if self.actions.blip_exists_by_name(&self.blip_data.name).await? {
                     return Err(color_eyre::eyre::eyre!(
                         "Blip already exists: {}",
                         self.blip_data.name
                     ));
                 }
 
-                let quadrant_str = quadrant.as_str().to_string();
-                let ring_str = ring.as_str().to_string();
-
                 let blip_params = BlipMetadataParams {
                     id,
                     name: self.blip_data.name.clone(),
-                    ring: ring_str,
-                    quadrant: quadrant_str,
+                    ring,
+                    quadrant,
                     tag: String::new(),
-                    author: self.author_name.clone(),
+                    author: self.actions.author_name.clone(),
                     has_adr: "false".to_string(),
                     description: String::new(),
                     created: timestamp.clone(),
                     adr_id: None,
                 };
-                insert_new_blip(pool, &blip_params).await?;
+                self.actions.insert_blip(&blip_params).await?;
                 self.fetch_blips().await?;
-            }
-            None => {
-                return Err(color_eyre::eyre::eyre!("No input mode selected"));
             }
         }
 
         let id_string = id.to_string();
-        let content = match self.input_mode {
-            Some(InputMode::Adr) => {
-                self.generate_adr_content(&id_string, &timestamp, quadrant, ring)
-            }
-            Some(InputMode::Blip) => {
-                self.generate_blip_content(&id_string, &timestamp, quadrant, ring)
-            }
-            None => return Err(color_eyre::eyre::eyre!("No input mode selected")),
+        let content = match input_mode {
+            InputMode::Adr => self.generate_adr_content(&id_string, &timestamp, quadrant, ring),
+            InputMode::Blip => self.generate_blip_content(&id_string, &timestamp, quadrant, ring),
         };
 
-        let mut file = fs::File::create(&file_path)?;
-        file.write_all(content.as_bytes())?;
+        std::fs::create_dir_all(target_dir)?;
+        std::fs::write(&file_path, content)?;
 
         Ok(file_path)
     }
@@ -525,7 +499,7 @@ impl App {
             self.blip_data.name,
             ring,
             quadrant,
-            self.author_name,
+            self.actions.author_name,
             timestamp,
             self.blip_data.name,
             ring,
@@ -533,44 +507,28 @@ impl App {
         )
     }
 
+
     pub async fn fetch_blips(&mut self) -> Result<()> {
-        use crate::db::queries::get_blips;
-        if let Some(pool) = &self.db_pool {
-            let blips = get_blips(pool).await?;
-            self.blips = blips;
-        }
+        self.blips = self.actions.fetch_blips().await?;
         Ok(())
     }
 
     pub async fn fetch_adrs_for_blip(&mut self, blip_name: &str) -> Result<()> {
-        use crate::db::queries::{get_adrs, get_adrs_by_blip_name};
-        if let Some(pool) = &self.db_pool {
-            if blip_name.is_empty() {
-                let adrs = get_adrs(pool).await?;
-                self.adrs = adrs;
-                self.adr_filter_name = None;
-            } else {
-                let adrs = get_adrs_by_blip_name(pool, blip_name).await?;
-                self.adrs = adrs;
-                self.adr_filter_name = Some(blip_name.to_string());
-            }
-        }
+        self.adrs = self.actions.fetch_adrs_for_blip(blip_name).await?;
+        self.adr_filter_name = if blip_name.is_empty() {
+            None
+        } else {
+            Some(blip_name.to_string())
+        };
         Ok(())
     }
 
 
     /// Updates a blip in the database and refreshes the blips list
     pub async fn update_blip(&mut self, params: BlipUpdateParams) -> Result<()> {
-        if let Some(pool) = &self.db_pool {
-            // Update the blip in the database
-            update_blip(pool, &params).await?;
-
-            // Refresh the blips list to show the updated data
-            self.fetch_blips().await?;
-
-            // Set a status message
-            self.status_message = "Blip updated successfully".to_string();
-        }
+        self.actions.update_blip(&params).await?;
+        self.fetch_blips().await?;
+        self.status_message = "Blip updated successfully".to_string();
         Ok(())
     }
 }

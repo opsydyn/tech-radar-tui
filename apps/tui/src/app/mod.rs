@@ -1,6 +1,7 @@
 // App module for ratatui_adr-gen
 // Handles application state and business logic
 
+pub mod actions;
 pub mod input;
 pub mod state;
 

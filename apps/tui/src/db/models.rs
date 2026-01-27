@@ -16,8 +16,8 @@ pub struct AdrRecord {
 pub struct BlipRecord {
     pub id: i32,
     pub name: String,
-    pub ring: Option<String>,
-    pub quadrant: Option<String>,
+    pub ring: Option<crate::Ring>,
+    pub quadrant: Option<crate::Quadrant>,
     pub tag: Option<String>,
     pub description: Option<String>,
     pub created: String,
@@ -42,8 +42,8 @@ pub struct AdrMetadataParams {
 pub struct BlipMetadataParams {
     pub id: i32,
     pub name: String,
-    pub ring: String,
-    pub quadrant: String,
+    pub ring: crate::Ring,
+    pub quadrant: crate::Quadrant,
     pub tag: String,
     pub description: String,
     pub created: String,

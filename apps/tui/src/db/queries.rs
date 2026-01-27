@@ -2,6 +2,7 @@ use color_eyre::Result;
 use sqlx::{query, query_as, SqlitePool};
 
 use crate::db::models::{AdrRecord, BlipRecord};
+use crate::{Quadrant, Ring};
 use sqlx::query_scalar;
 
 /// Retrieves all ADR records from the database
@@ -43,8 +44,10 @@ pub async fn count_adrs(pool: &SqlitePool) -> Result<i64, sqlx::Error> {
         .await
 }
 
-pub async fn count_blips_by_quadrant(pool: &SqlitePool) -> Result<Vec<(String, i64)>, sqlx::Error> {
-    let rows = query_as::<_, (String, i64)>(
+pub async fn count_blips_by_quadrant(
+    pool: &SqlitePool,
+) -> Result<Vec<(Quadrant, i64)>, sqlx::Error> {
+    let rows = query_as::<_, (Quadrant, i64)>(
         "SELECT quadrant, COUNT(*) FROM blip WHERE quadrant IS NOT NULL GROUP BY quadrant",
     )
     .fetch_all(pool)
@@ -53,8 +56,8 @@ pub async fn count_blips_by_quadrant(pool: &SqlitePool) -> Result<Vec<(String, i
     Ok(rows)
 }
 
-pub async fn count_blips_by_ring(pool: &SqlitePool) -> Result<Vec<(String, i64)>, sqlx::Error> {
-    let rows = query_as::<_, (String, i64)>(
+pub async fn count_blips_by_ring(pool: &SqlitePool) -> Result<Vec<(Ring, i64)>, sqlx::Error> {
+    let rows = query_as::<_, (Ring, i64)>(
         "SELECT ring, COUNT(*) FROM blip WHERE ring IS NOT NULL GROUP BY ring",
     )
     .fetch_all(pool)
@@ -92,7 +95,7 @@ pub async fn get_blips(pool: &SqlitePool) -> Result<Vec<BlipRecord>, sqlx::Error
 #[allow(dead_code)]
 pub async fn get_blips_by_quadrant(
     pool: &SqlitePool,
-    quadrant: &str,
+    quadrant: Quadrant,
 ) -> Result<Vec<BlipRecord>, sqlx::Error> {
     let blips = query_as::<_, BlipRecord>(
         "SELECT id, name, ring, quadrant, tag, description, created, \"hasAdr\", adr_id 
@@ -121,7 +124,7 @@ pub async fn blip_exists_by_name(pool: &SqlitePool, name: &str) -> Result<bool, 
 #[allow(dead_code)]
 pub async fn get_blips_by_ring(
     pool: &SqlitePool,
-    ring: &str,
+    ring: Ring,
 ) -> Result<Vec<BlipRecord>, sqlx::Error> {
     let blips = query_as::<_, BlipRecord>(
         "SELECT id, name, ring, quadrant, tag, description, created, \"hasAdr\", adr_id 
@@ -156,8 +159,8 @@ pub async fn get_blip_by_id(pool: &SqlitePool, id: i32) -> Result<BlipRecord, sq
 pub struct BlipUpdateParams {
     pub id: i32,
     pub name: Option<String>,
-    pub ring: Option<String>,
-    pub quadrant: Option<String>,
+    pub ring: Option<Ring>,
+    pub quadrant: Option<Quadrant>,
     pub tag: Option<String>,
     pub description: Option<String>,
     pub adr_id: Option<i32>,
@@ -180,18 +183,8 @@ pub async fn update_blip(pool: &SqlitePool, params: &BlipUpdateParams) -> Result
          WHERE id = ?",
     )
     .bind(params.name.as_deref().unwrap_or(&current.name))
-    .bind(
-        params
-            .ring
-            .as_deref()
-            .unwrap_or(&current.ring.unwrap_or_default()),
-    )
-    .bind(
-        params
-            .quadrant
-            .as_deref()
-            .unwrap_or(&current.quadrant.unwrap_or_default()),
-    )
+    .bind(params.ring.or(current.ring))
+    .bind(params.quadrant.or(current.quadrant))
     .bind(
         params
             .tag
@@ -261,7 +254,7 @@ mod tests {
         let blip = get_blip_by_id(&pool, 1).await?;
         assert_eq!(blip.id, 1);
         assert_eq!(blip.name, "Test Blip");
-        assert_eq!(blip.ring, Some("trial".to_string()));
+        assert_eq!(blip.ring, Some(crate::Ring::Trial));
 
         Ok(())
     }
@@ -278,6 +271,7 @@ mod tests {
             quadrant: None,
             tag: None,
             description: None,
+            adr_id: None,
         };
 
         update_blip(&pool, &params).await?;
@@ -285,16 +279,17 @@ mod tests {
         // Verify the update
         let updated = get_blip_by_id(&pool, 1).await?;
         assert_eq!(updated.name, "Updated Blip");
-        assert_eq!(updated.ring, Some("trial".to_string())); // Should be unchanged
+        assert_eq!(updated.ring, Some(crate::Ring::Trial));
 
         // Update multiple fields
         let params2 = BlipUpdateParams {
             id: 1,
             name: None, // Keep current name
-            ring: Some("adopt".to_string()),
-            quadrant: Some("languages".to_string()),
+            ring: Some(crate::Ring::Adopt),
+            quadrant: Some(crate::Quadrant::Languages),
             tag: None,
             description: Some("Updated description".to_string()),
+            adr_id: None,
         };
 
         update_blip(&pool, &params2).await?;
@@ -302,8 +297,8 @@ mod tests {
         // Verify the updates
         let updated2 = get_blip_by_id(&pool, 1).await?;
         assert_eq!(updated2.name, "Updated Blip"); // Should be unchanged
-        assert_eq!(updated2.ring, Some("adopt".to_string())); // Should be updated
-        assert_eq!(updated2.quadrant, Some("languages".to_string())); // Should be updated
+        assert_eq!(updated2.ring, Some(crate::Ring::Adopt));
+        assert_eq!(updated2.quadrant, Some(crate::Quadrant::Languages));
         assert_eq!(
             updated2.description,
             Some("Updated description".to_string())

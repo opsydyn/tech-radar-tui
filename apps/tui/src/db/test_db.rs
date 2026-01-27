@@ -24,8 +24,8 @@ pub async fn test_database_setup() -> Result<()> {
     let blip_params = BlipMetadataParams {
         id: 1,
         name: "Test Blip".to_string(),
-        ring: "Adopt".to_string(),
-        quadrant: "Techniques".to_string(),
+        ring: crate::Ring::Adopt,
+        quadrant: crate::Quadrant::Techniques,
         tag: "test".to_string(),
         description: "This is a test blip".to_string(),
         created: Local::now().to_string(),

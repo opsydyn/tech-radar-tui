@@ -1,15 +1,4 @@
-use crate::app::state::EditField;
-use crate::app::{state::AppScreen, App, InputMode, InputState};
-use crate::{Quadrant, Ring};
 
-fn quadrant_color(quadrant: &str) -> Color {
-    match quadrant {
-        "platforms" => Color::Rgb(0, 0, 238),
-        "languages" => Color::Cyan,
-        "tools" => Color::Yellow,
-        "techniques" => Color::Magenta,
-        _ => Color::Gray,
-    }
 }
 
 fn quadrant_color_from_option(value: Option<&str>) -> Color {
@@ -440,7 +429,14 @@ pub fn ui(app: &App, f: &mut Frame<'_>) {
 
     // Create styled text for status message
     let status_text = if app.status_message.is_empty() {
-        Text::from("")
+        Text::from(Span::styled(
+            if app.animation_paused {
+                "Animation paused"
+            } else {
+                ""
+            },
+            Style::default().fg(Color::Gray),
+        ))
     } else {
         let style = if app.status_message.starts_with("Error") {
             Style::default().fg(Color::Red)
@@ -598,10 +594,7 @@ pub fn ui(app: &App, f: &mut Frame<'_>) {
 
     let left_split = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(9),
-            Constraint::Min(8),
-        ])
+        .constraints([Constraint::Length(9), Constraint::Min(8)])
         .split(horizontal_split[0]);
 
     f.render_widget(content_paragraph, left_split[0]);
@@ -610,10 +603,7 @@ pub fn ui(app: &App, f: &mut Frame<'_>) {
     if app.input_state == InputState::WaitingForCommand {
         let right_split = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),
-                Constraint::Percentage(97),
-            ])
+            .constraints([Constraint::Length(3), Constraint::Percentage(97)])
             .split(horizontal_split[1]);
 
         render_chart_tabs(app, f, right_split[0]);
@@ -652,6 +642,13 @@ pub fn ui(app: &App, f: &mut Frame<'_>) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(": Help | ", Style::default().fg(Color::Gray)),
+        Span::styled(
+            "Space",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(": Pause | ", Style::default().fg(Color::Gray)),
         Span::styled(
             "Esc",
             Style::default()
@@ -921,13 +918,7 @@ fn render_adrs_view(app: &App, f: &mut Frame<'_>) {
     });
 
     let title = app.adr_filter_name.as_ref().map_or_else(
-        || {
-            format!(
-                "ADR Log ({} of {})",
-                app.selected_adr_index + 1,
-                total_rows
-            )
-        },
+        || format!("ADR Log ({} of {})", app.selected_adr_index + 1, total_rows),
         |filter| {
             format!(
                 "ADR Log for {} ({} of {})",
@@ -1002,7 +993,6 @@ fn render_blip_details(app: &App, f: &mut Frame<'_>) {
 
     let lines = vec![
         TextLine::from(format!("Name: {}", blip.name)),
-
         TextLine::from(format!(
             "Ring: {}",
             blip.ring.clone().unwrap_or_else(|| "(none)".to_string())
@@ -1162,7 +1152,10 @@ fn render_full_radar(app: &App, f: &mut Frame<'_>, area: Rect) {
                 _ => return None,
             };
 
-            let hash = blip.name.bytes().fold(0_u64, |acc, b| acc.wrapping_mul(31) + u64::from(b));
+            let hash = blip
+                .name
+                .bytes()
+                .fold(0_u64, |acc, b| acc.wrapping_mul(31) + u64::from(b));
             let jitter = f64::from((hash % 100) as u8) / 100.0;
 
             let quadrant_angle = std::f64::consts::FRAC_PI_2 * f64::from(quadrant);
@@ -1195,6 +1188,15 @@ fn render_full_radar(app: &App, f: &mut Frame<'_>, area: Rect) {
                     });
                 }
 
+                let pulse = (app.animation_counter * 0.6).sin().mul_add(0.5, 0.5);
+                let pulse_radius = max_radius * (0.45 + pulse * 0.5);
+                ctx.draw(&Circle {
+                    x: center_x,
+                    y: center_y,
+                    radius: pulse_radius,
+                    color: Color::LightCyan,
+                });
+
                 ctx.draw(&CanvasLine {
                     x1: center_x,
                     y1: center_y - max_radius,
@@ -1207,6 +1209,28 @@ fn render_full_radar(app: &App, f: &mut Frame<'_>, area: Rect) {
                     y1: center_y,
                     x2: center_x + max_radius,
                     y2: center_y,
+                    color: Color::DarkGray,
+                });
+
+                let sweep_angle = app.animation_counter * 1.4;
+                let sweep_x = sweep_angle.cos().mul_add(max_radius, center_x);
+                let sweep_y = sweep_angle.sin().mul_add(max_radius, center_y);
+                ctx.draw(&CanvasLine {
+                    x1: center_x,
+                    y1: center_y,
+                    x2: sweep_x,
+                    y2: sweep_y,
+                    color: Color::LightCyan,
+                });
+
+                let ghost_angle = sweep_angle + (std::f64::consts::PI / 20.0);
+                let ghost_x = ghost_angle.cos().mul_add(max_radius * 0.92, center_x);
+                let ghost_y = ghost_angle.sin().mul_add(max_radius * 0.92, center_y);
+                ctx.draw(&CanvasLine {
+                    x1: center_x,
+                    y1: center_y,
+                    x2: ghost_x,
+                    y2: ghost_y,
                     color: Color::DarkGray,
                 });
 
@@ -1301,14 +1325,18 @@ fn render_blip_scatter(app: &App, f: &mut Frame<'_>, area: Rect) {
             .data(&techniques),
     ];
 
-
     let x_labels = vec![
         Span::raw("Platforms"),
         Span::raw("Languages"),
         Span::raw("Tools"),
         Span::raw("Techniques"),
     ];
-    let y_labels = vec![Span::raw("Hold"), Span::raw("Assess"), Span::raw("Trial"), Span::raw("Adopt")];
+    let y_labels = vec![
+        Span::raw("Hold"),
+        Span::raw("Assess"),
+        Span::raw("Trial"),
+        Span::raw("Adopt"),
+    ];
 
     let chart = Chart::new(datasets)
         .block(
@@ -1410,7 +1438,11 @@ fn render_blip_barchart(app: &App, f: &mut Frame<'_>, area: Rect) {
                 .value(*value)
                 .label(TextLine::from(labels[index]))
                 .style(Style::default().fg(bar_colors[index]))
-                .value_style(Style::default().fg(Color::White).add_modifier(Modifier::BOLD))
+                .value_style(
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                )
         })
         .collect();
 
@@ -1472,7 +1504,11 @@ fn render_ring_barchart(app: &App, f: &mut Frame<'_>, area: Rect) {
                 .value(*value)
                 .label(TextLine::from(labels[index]))
                 .style(Style::default().fg(colors[index]))
-                .value_style(Style::default().fg(Color::White).add_modifier(Modifier::BOLD))
+                .value_style(
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                )
         })
         .collect();
 
@@ -1519,10 +1555,10 @@ fn render_ring_piechart(app: &App, f: &mut Frame<'_>, area: Rect) {
     }
 
     let slices = vec![
-        PieSlice::new("Hold", counts[0], Color::Gray),
-        PieSlice::new("Assess", counts[1], Color::Cyan),
-        PieSlice::new("Trial", counts[2], Color::Yellow),
-        PieSlice::new("Adopt", counts[3], Color::Rgb(0, 0, 238)),
+        PieSlice::new("Hold", counts[0], Color::LightRed),
+        PieSlice::new("Assess", counts[1], Color::LightBlue),
+        PieSlice::new("Trial", counts[2], Color::LightGreen),
+        PieSlice::new("Adopt", counts[3], Color::LightMagenta),
     ];
 
     let chart = PieChart::new(slices)
@@ -1547,7 +1583,6 @@ pub fn render_radar(
     ring: Option<Ring>,
     animation: f64,
 ) {
-
     f.render_widget(
         Canvas::default()
             .paint(|ctx| {
