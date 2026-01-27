@@ -33,9 +33,17 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install Moon
-        uses: moonrepo/setup-moon@v1
-        with:
-          version: latest
+        if: matrix.os != 'windows-latest'
+        run: |
+          curl -fsSL https://moonrepo.dev/install.sh | bash
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: Install Moon (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          Invoke-WebRequest https://moonrepo.dev/install.ps1 -OutFile install-moon.ps1
+          ./install-moon.ps1
+          "$env:USERPROFILE\.moon\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
       - name: Moon check
         if: matrix.os == 'ubuntu-latest'
