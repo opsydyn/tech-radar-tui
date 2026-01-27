@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: /home/runner/work/tech-radar-tui/tech-radar-tui
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install Moon
+        uses: moonrepo/setup-moon@v1
+        with:
+          version: latest
+
+      - name: Moon check
+        run: moon run tui:check
+
+      - name: Moon fmt
+        run: moon run tui:format
+
+      - name: Moon lint
+        run: moon run tui:lint
+
+      - name: Moon test
+        run: moon run tui:test

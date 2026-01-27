@@ -153,7 +153,6 @@ pub async fn get_blip_by_id(pool: &SqlitePool, id: i32) -> Result<BlipRecord, sq
     Ok(blip)
 }
 
-
 /// Parameters for updating a Blip
 #[derive(Debug, Clone)]
 pub struct BlipUpdateParams {
@@ -198,7 +197,9 @@ pub async fn update_blip(pool: &SqlitePool, params: &BlipUpdateParams) -> Result
             .unwrap_or(&current.description.unwrap_or_default()),
     )
     .bind(params.adr_id.or(current.adr_id))
-    .bind(i32::from(params.adr_id.is_some() || current.adr_id.is_some()))
+    .bind(i32::from(
+        params.adr_id.is_some() || current.adr_id.is_some(),
+    ))
     .bind(params.id)
     .execute(pool)
     .await?;
@@ -210,7 +211,6 @@ pub async fn update_blip(pool: &SqlitePool, params: &BlipUpdateParams) -> Result
 mod tests {
     use super::*;
     use sqlx::sqlite::SqlitePoolOptions;
-    use std::env;
 
     async fn setup_test_db() -> Result<SqlitePool, sqlx::Error> {
         // Use an in-memory database for testing

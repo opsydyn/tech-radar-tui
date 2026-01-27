@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-release:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: tech-radar-tui-linux
+            bin: ratatui_adr-gen
+          - os: macos-latest
+            artifact: tech-radar-tui-macos
+            bin: ratatui_adr-gen
+          - os: windows-latest
+            artifact: tech-radar-tui-windows.exe
+            bin: ratatui_adr-gen.exe
+
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Moon
+        uses: moonrepo/setup-moon@v1
+        with:
+          version: latest
+
+      - name: Moon check
+        if: matrix.os == 'ubuntu-latest'
+        run: moon run tui:check
+
+      - name: Moon test
+        if: matrix.os == 'ubuntu-latest'
+        run: moon run tui:test
+
+      - name: Build release
+        run: moon run tui:build
+
+      - name: Prepare artifact (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          mkdir -p dist
+          cp "apps/tui/target/release/${{ matrix.bin }}" "dist/${{ matrix.artifact }}"
+
+      - name: Prepare artifact (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          New-Item -ItemType Directory -Path dist -Force | Out-Null
+          Copy-Item "apps/tui/target/release/${{ matrix.bin }}" "dist/${{ matrix.artifact }}"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ matrix.artifact }}
