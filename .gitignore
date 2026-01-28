@@ -24,6 +24,9 @@ Cargo.lock
 *.profdata
 .tarpaulin-report.html
 
+# artifacts
+/dist
+
 # macOS
 .DS_Store
 .AppleDouble
