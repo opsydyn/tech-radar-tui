@@ -4,6 +4,10 @@
 [![Downloads](https://img.shields.io/github/downloads/opsydyn/tech-radar-tui/total)](https://github.com/opsydyn/tech-radar-tui/releases)
 [![CI](https://img.shields.io/github/actions/workflow/status/opsydyn/tech-radar-tui/ci.yml?branch=master)](https://github.com/opsydyn/tech-radar-tui/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/opsydyn/tech-radar-tui)](LICENSE)
+[![Release date](https://img.shields.io/github/release-date/opsydyn/tech-radar-tui)](https://github.com/opsydyn/tech-radar-tui/releases)
+[![Last commit](https://img.shields.io/github/last-commit/opsydyn/tech-radar-tui)](https://github.com/opsydyn/tech-radar-tui/commits/master)
+[![Code size](https://img.shields.io/github/languages/code-size/opsydyn/tech-radar-tui)](https://github.com/opsydyn/tech-radar-tui)
+[![Rust version](https://img.shields.io/badge/rust-1.72%2B-orange)](https://www.rust-lang.org)
 
 ![Tech Radar mascot](tech_rdar_rat.webp)
 
