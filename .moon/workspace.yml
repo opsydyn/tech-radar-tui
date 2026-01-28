@@ -15,4 +15,9 @@ projects:
   - 'apps/*'
   - 'packages/*'
 
-
+vcs:
+  hooks:
+    pre-commit:
+      - 'moon run tui:format --affected --status=staged'
+      - 'moon run tui:lint --affected --status=staged'
+  syncHooks: true
