@@ -138,6 +138,9 @@ pub fn render_edit_blip(app: &App, f: &mut Frame<'_>) {
             ),
             Span::raw(": Save Changes"),
         ]);
-        f.render_widget(Paragraph::new(help_text).alignment(Alignment::Center), form_chunks[6]);
+        f.render_widget(
+            Paragraph::new(help_text).alignment(Alignment::Center),
+            form_chunks[6],
+        );
     }
 }

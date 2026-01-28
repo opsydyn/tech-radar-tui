@@ -8,7 +8,6 @@ use std::{
     time::Instant,
 };
 
-
 #[derive(Debug)]
 pub struct BlipData {
     pub name: String,
@@ -381,7 +380,11 @@ impl App {
                 }
             }
             InputMode::Blip => {
-                if self.actions.blip_exists_by_name(&self.blip_data.name).await? {
+                if self
+                    .actions
+                    .blip_exists_by_name(&self.blip_data.name)
+                    .await?
+                {
                     return Err(color_eyre::eyre::eyre!(
                         "Blip already exists: {}",
                         self.blip_data.name
@@ -507,7 +510,6 @@ impl App {
         )
     }
 
-
     pub async fn fetch_blips(&mut self) -> Result<()> {
         self.blips = self.actions.fetch_blips().await?;
         Ok(())
@@ -522,7 +524,6 @@ impl App {
         };
         Ok(())
     }
-
 
     /// Updates a blip in the database and refreshes the blips list
     pub async fn update_blip(&mut self, params: BlipUpdateParams) -> Result<()> {

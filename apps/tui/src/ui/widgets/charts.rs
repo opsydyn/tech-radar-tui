@@ -195,7 +195,11 @@ pub fn render_blip_barchart(app: &App, f: &mut Frame<'_>, area: Rect) {
                 .value(*value)
                 .label(TextLine::from(labels[index]))
                 .style(Style::default().fg(bar_colors[index]))
-                .value_style(Style::default().fg(Color::White).add_modifier(Modifier::BOLD))
+                .value_style(
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                )
         })
         .collect();
 
@@ -242,7 +246,12 @@ pub fn render_ring_barchart(app: &App, f: &mut Frame<'_>, area: Rect) {
     }
 
     let labels = ["Hold", "Assess", "Trial", "Adopt"];
-    let colors = [Color::Gray, Color::Cyan, Color::Yellow, Color::Rgb(0, 0, 238)];
+    let colors = [
+        Color::Gray,
+        Color::Cyan,
+        Color::Yellow,
+        Color::Rgb(0, 0, 238),
+    ];
 
     let bars: Vec<Bar<'_>> = counts
         .iter()
@@ -252,7 +261,11 @@ pub fn render_ring_barchart(app: &App, f: &mut Frame<'_>, area: Rect) {
                 .value(*value)
                 .label(TextLine::from(labels[index]))
                 .style(Style::default().fg(colors[index]))
-                .value_style(Style::default().fg(Color::White).add_modifier(Modifier::BOLD))
+                .value_style(
+                    Style::default()
+                        .fg(Color::White)
+                        .add_modifier(Modifier::BOLD),
+                )
         })
         .collect();
 

@@ -50,7 +50,9 @@ impl AppActions {
 
     pub async fn insert_adr(&self, params: &AdrMetadataParams) -> Result<()> {
         let pool = self.pool()?;
-        insert_new_adr_with_params(pool, params).await.map_err(Into::into)
+        insert_new_adr_with_params(pool, params)
+            .await
+            .map_err(Into::into)
     }
 
     pub async fn insert_blip(&self, params: &BlipMetadataParams) -> Result<()> {
@@ -60,7 +62,9 @@ impl AppActions {
 
     pub async fn fetch_blips(&self) -> Result<Vec<BlipRecord>> {
         let pool = self.pool()?;
-        crate::db::queries::get_blips(pool).await.map_err(Into::into)
+        crate::db::queries::get_blips(pool)
+            .await
+            .map_err(Into::into)
     }
 
     pub async fn fetch_adrs_for_blip(&self, blip_name: &str) -> Result<Vec<AdrRecord>> {
@@ -90,12 +94,16 @@ impl AppActions {
 
     pub async fn count_blips(&self) -> Result<i64> {
         let pool = self.pool()?;
-        crate::db::queries::count_blips(pool).await.map_err(Into::into)
+        crate::db::queries::count_blips(pool)
+            .await
+            .map_err(Into::into)
     }
 
     pub async fn count_adrs(&self) -> Result<i64> {
         let pool = self.pool()?;
-        crate::db::queries::count_adrs(pool).await.map_err(Into::into)
+        crate::db::queries::count_adrs(pool)
+            .await
+            .map_err(Into::into)
     }
 
     pub async fn count_blips_by_quadrant(&self) -> Result<Vec<(crate::Quadrant, i64)>> {

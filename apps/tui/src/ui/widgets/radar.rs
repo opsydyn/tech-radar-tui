@@ -14,7 +14,6 @@ pub fn quadrant_color(quadrant: &str) -> Color {
     }
 }
 
-
 pub fn render_mini_radar(f: &mut Frame<'_>, area: Rect, animation: f64) {
     if area.width < 4 || area.height < 4 {
         return;

@@ -170,7 +170,12 @@ fn blip_info_lines(app: &App) -> Vec<TextLine<'_>> {
     let value_style = Style::default().fg(Color::Yellow);
 
     vec![
-        info_line("Technology", app.blip_data.name.as_str(), label_style, name_style),
+        info_line(
+            "Technology",
+            app.blip_data.name.as_str(),
+            label_style,
+            name_style,
+        ),
         info_line(
             "Quadrant",
             &app.blip_data
@@ -408,7 +413,12 @@ fn ring_selection_lines(selection_index: usize) -> Vec<TextLine<'static>> {
     lines
 }
 
-fn info_line(label: &str, value: &str, label_style: Style, value_style: Style) -> TextLine<'static> {
+fn info_line(
+    label: &str,
+    value: &str,
+    label_style: Style,
+    value_style: Style,
+) -> TextLine<'static> {
     TextLine::from(vec![
         Span::styled(format!("{label}: "), label_style),
         Span::styled(value.to_string(), value_style),

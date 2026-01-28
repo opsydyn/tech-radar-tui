@@ -330,9 +330,8 @@ pub async fn insert_new_blip(
     )
     .bind(id)
     .bind(&blip_params.name)
-     .bind(blip_params.ring)
-     .bind(blip_params.quadrant)
-
+    .bind(blip_params.ring)
+    .bind(blip_params.quadrant)
     .bind(&blip_params.tag)
     .bind(&blip_params.description)
     .bind(&blip_params.created)

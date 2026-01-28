@@ -1,13 +1,13 @@
 use crate::app::state::{App, AppScreen};
 use crossterm::event::KeyCode;
 
+mod adrs;
 mod blip_actions;
 mod blip_details;
 mod blips;
 mod edit_blip;
 mod help;
 mod main;
-mod adrs;
 
 pub async fn dispatch_input(app: &mut App, key: KeyCode) {
     if help::handle_help_toggle(app, key) {

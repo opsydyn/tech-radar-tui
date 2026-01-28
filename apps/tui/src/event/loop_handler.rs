@@ -217,7 +217,10 @@ async fn render_headless_stats(app: &App) -> Result<()> {
             || "(none)".to_string(),
             |quadrant| quadrant.as_str().to_string(),
         );
-        println!("- {} | {} | {} | {}", blip.name, quadrant, ring, blip.created);
+        println!(
+            "- {} | {} | {} | {}",
+            blip.name, quadrant, ring, blip.created
+        );
     }
 
     Ok(())
