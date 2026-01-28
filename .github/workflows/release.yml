@@ -48,11 +48,32 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: moon run tui:test
 
+      - name: Build release (macOS universal)
+        if: matrix.os == 'macos-latest'
+        run: |
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+          cargo build --release --manifest-path apps/tui/Cargo.toml --target aarch64-apple-darwin
+          cargo build --release --manifest-path apps/tui/Cargo.toml --target x86_64-apple-darwin
+
       - name: Build release
+        if: matrix.os != 'macos-latest'
         run: cargo build --release --manifest-path apps/tui/Cargo.toml
 
+      - name: Prepare artifact (macOS universal)
+        if: matrix.os == 'macos-latest'
+        run: |
+          mkdir -p dist
+          lipo -create \
+            "target/aarch64-apple-darwin/release/${{ matrix.bin }}" \
+            "target/x86_64-apple-darwin/release/${{ matrix.bin }}" \
+            -output "dist/${{ matrix.artifact }}"
+
+      - name: Verify universal binary
+        if: matrix.os == 'macos-latest'
+        run: lipo -info "dist/${{ matrix.artifact }}"
+
       - name: Prepare artifact (Unix)
-        if: matrix.os != 'windows-latest'
+        if: matrix.os != 'windows-latest' && matrix.os != 'macos-latest'
         run: |
           mkdir -p dist
           cp "target/release/${{ matrix.bin }}" "dist/${{ matrix.artifact }}"
