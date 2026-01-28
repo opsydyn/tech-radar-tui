@@ -35,26 +35,34 @@ jobs:
       - name: Install Moon
         if: matrix.os != 'windows-latest'
         run: |
-          curl -fsSL https://moonrepo.dev/install.sh | bash
+          curl -fsSL https://moonrepo.dev/install.sh | bash -s -- --yes
           echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+          "$HOME/.moon/bin/moon" --version
 
       - name: Install Moon (Windows)
         if: matrix.os == 'windows-latest'
         run: |
           Invoke-WebRequest https://moonrepo.dev/install.ps1 -OutFile install-moon.ps1
-          ./install-moon.ps1
+          ./install-moon.ps1 -yes
           "$env:USERPROFILE\.moon\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+          & "$env:USERPROFILE\.moon\bin\moon.exe" --version
 
       - name: Moon check
         if: matrix.os == 'ubuntu-latest'
-        run: moon run tui:check
+        run: $HOME/.moon/bin/moon run tui:check
 
       - name: Moon test
         if: matrix.os == 'ubuntu-latest'
-        run: moon run tui:test
+        run: $HOME/.moon/bin/moon run tui:test
 
       - name: Build release
-        run: moon run tui:build
+        if: matrix.os != 'windows-latest'
+        run: $HOME/.moon/bin/moon run tui:build
+
+      - name: Build release (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          $env:USERPROFILE\.moon\bin\moon.exe run tui:build
 
       - name: Prepare artifact (Unix)
         if: matrix.os != 'windows-latest'
