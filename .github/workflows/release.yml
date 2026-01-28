@@ -52,13 +52,13 @@ jobs:
         if: matrix.os != 'windows-latest'
         run: |
           mkdir -p dist
-          cp "apps/tui/target/release/${{ matrix.bin }}" "dist/${{ matrix.artifact }}"
+          cp "target/release/${{ matrix.bin }}" "dist/${{ matrix.artifact }}"
 
       - name: Prepare artifact (Windows)
         if: matrix.os == 'windows-latest'
         run: |
           New-Item -ItemType Directory -Path dist -Force | Out-Null
-          Copy-Item "apps/tui/target/release/${{ matrix.bin }}" "dist/${{ matrix.artifact }}"
+          Copy-Item "target/release/${{ matrix.bin }}" "dist/${{ matrix.artifact }}"
 
       - name: Create release
         uses: softprops/action-gh-release@v2
