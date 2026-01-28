@@ -24,7 +24,7 @@ owners:
 
 tasks:
   build:
-    command: 'cargo build'
+    command: 'cargo build --release'
     inputs:
       - '@globs(sources)'
   check:

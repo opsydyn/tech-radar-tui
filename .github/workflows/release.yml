@@ -46,7 +46,7 @@ jobs:
         run: moon run tui:test
 
       - name: Build release
-        run: moon run tui:build
+        run: cargo build --release --manifest-path apps/tui/Cargo.toml
 
       - name: Prepare artifact (Unix)
         if: matrix.os != 'windows-latest'
