@@ -23,19 +23,18 @@ jobs:
           components: rustfmt, clippy
 
       - name: Install Moon
-        run: |
-          curl -fsSL https://moonrepo.dev/install.sh | bash -s -- --yes
-          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
-          "$HOME/.moon/bin/moon" --version
+        uses: moonrepo/setup-toolchain@v0
+        with:
+          moon-version: latest
 
       - name: Moon check
-        run: $HOME/.moon/bin/moon run tui:check
+        run: moon run tui:check
 
       - name: Moon fmt
-        run: $HOME/.moon/bin/moon run tui:format
+        run: moon run tui:format
 
       - name: Moon lint
-        run: $HOME/.moon/bin/moon run tui:lint
+        run: moon run tui:lint
 
       - name: Moon test
-        run: $HOME/.moon/bin/moon run tui:test
+        run: moon run tui:test
