@@ -59,11 +59,11 @@ Generates `mdx` files in `./adrs/` with this format:
 
 ```mdx
 ---
+id: "1"
 title: "Rust"
+blip: "Rust"
 date: 2025-03-23
 status: "accepted"
-quadrant: "languages"
-ring: "adopt"
 ---
 
 # Rust
@@ -79,13 +79,11 @@ ring: "adopt"
 ## Consequences
 
 ...
-
-## References
-
-...
 ```
 
-For Blips, the structure is slightly different and omits `status`.
+ADR status values: `proposed`, `accepted`, `rejected`, `deprecated`, `superseded`.
+
+For Blips, the structure is slightly different and includes `quadrant` and `ring` instead of `status`.
 
 ---
 

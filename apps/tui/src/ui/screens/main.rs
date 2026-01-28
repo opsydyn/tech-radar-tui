@@ -1,4 +1,4 @@
-use crate::app::{App, InputMode, InputState};
+use crate::app::{AdrStatus, App, InputMode, InputState};
 use crate::ui::widgets::charts::{render_chart_panel, render_chart_tabs};
 use crate::ui::widgets::radar::{render_full_radar, render_mini_radar, render_radar};
 use crate::{Quadrant, Ring};
@@ -94,7 +94,7 @@ fn render_content_section(app: &App, f: &mut Frame<'_>, area: Rect) {
 
     let cursor = cursor_char(&app.input_state, app.animation_counter);
     let input_text = input_line(&app.current_input, cursor);
-    let blip_info = blip_info_lines(app);
+    let info_lines = entry_info_lines(app);
 
     let mut content_lines = vec![
         TextLine::from(Span::styled(
@@ -106,11 +106,14 @@ fn render_content_section(app: &App, f: &mut Frame<'_>, area: Rect) {
 
     append_input_state_lines(app, input_text, &mut content_lines);
 
-    if !blip_info.is_empty() {
+    if !info_lines.is_empty() {
         content_lines.push(TextLine::from(""));
-        content_lines.extend(blip_info);
+        content_lines.extend(info_lines);
 
-        if app.blip_data.quadrant.is_some() && app.blip_data.ring.is_some() {
+        if app.input_mode == Some(InputMode::Blip)
+            && app.blip_data.quadrant.is_some()
+            && app.blip_data.ring.is_some()
+        {
             content_lines.push(TextLine::from(""));
             content_lines.push(TextLine::from(Span::styled(
                 "Position in Radar:",
@@ -148,6 +151,9 @@ fn append_input_state_lines<'a>(
         InputState::WaitingForCommand => {
             content_lines.extend(mode_selection_lines(app.input_mode_selection_index));
         }
+        InputState::ChoosingAdrStatus => {
+            content_lines.extend(adr_status_selection_lines(app.adr_status_selection_index));
+        }
         InputState::ChoosingQuadrant => {
             content_lines.extend(quadrant_selection_lines(app.quadrant_selection_index));
         }
@@ -160,7 +166,7 @@ fn append_input_state_lines<'a>(
     }
 }
 
-fn blip_info_lines(app: &App) -> Vec<TextLine<'_>> {
+fn entry_info_lines(app: &App) -> Vec<TextLine<'_>> {
     if app.blip_data.name.is_empty() {
         return Vec::new();
     }
@@ -169,13 +175,25 @@ fn blip_info_lines(app: &App) -> Vec<TextLine<'_>> {
     let label_style = Style::default().fg(Color::Gray);
     let value_style = Style::default().fg(Color::Yellow);
 
-    vec![
-        info_line(
-            "Technology",
-            app.blip_data.name.as_str(),
+    let mut lines = vec![info_line(
+        "Technology",
+        app.blip_data.name.as_str(),
+        label_style,
+        name_style,
+    )];
+
+    if app.input_mode == Some(InputMode::Adr) {
+        let status_label = app.adr_status.map_or("Not selected", AdrStatus::as_str);
+        lines.push(info_line(
+            "ADR Status",
+            status_label,
             label_style,
-            name_style,
-        ),
+            value_style,
+        ));
+        return lines;
+    }
+
+    lines.extend([
         info_line(
             "Quadrant",
             &app.blip_data
@@ -192,7 +210,9 @@ fn blip_info_lines(app: &App) -> Vec<TextLine<'_>> {
             label_style,
             value_style,
         ),
-    ]
+    ]);
+
+    lines
 }
 
 fn render_side_panel(app: &App, f: &mut Frame<'_>, area: Rect) {
@@ -276,6 +296,7 @@ const fn prompt_line(state: &InputState) -> &'static str {
     match state {
         InputState::WaitingForCommand => "Select entry type (Use Left/Right and Enter)",
         InputState::EnteringTechnology => "Enter technology name:",
+        InputState::ChoosingAdrStatus => "Choose ADR status (Use Up/Down and Enter):",
         InputState::ChoosingQuadrant => "Choose quadrant (Use Up/Down and Enter):",
         InputState::ChoosingRing => "Choose ring (Use Up/Down and Enter):",
         InputState::GeneratingFile => "Generating file... Please wait",
@@ -303,7 +324,10 @@ fn mode_text_line(mode: Option<InputMode>) -> Span<'static> {
 
 fn cursor_char(state: &InputState, animation_counter: f64) -> &'static str {
     match state {
-        InputState::WaitingForCommand | InputState::Completed | InputState::GeneratingFile => "",
+        InputState::WaitingForCommand
+        | InputState::Completed
+        | InputState::GeneratingFile
+        | InputState::ChoosingAdrStatus => "",
         _ => {
             let blink = (animation_counter * 2.0).sin() > 0.0;
             if blink {
@@ -344,6 +368,43 @@ fn mode_selection_lines(selection_index: usize) -> Vec<TextLine<'static>> {
             TextLine::from(Span::styled(format!("{prefix} {label}"), style))
         })
         .collect()
+}
+
+fn adr_status_selection_lines(selection_index: usize) -> Vec<TextLine<'static>> {
+    let status_items = [
+        AdrStatus::Proposed,
+        AdrStatus::Accepted,
+        AdrStatus::Rejected,
+        AdrStatus::Deprecated,
+        AdrStatus::Superseded,
+    ];
+
+    let mut lines = Vec::new();
+    for (index, status) in status_items.iter().enumerate() {
+        let is_selected = index == selection_index;
+        let style = if is_selected {
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        let prefix = if is_selected { ">" } else { " " };
+        lines.push(TextLine::from(Span::styled(
+            format!("{prefix} {}", status.label()),
+            style,
+        )));
+
+        if is_selected {
+            lines.push(TextLine::from(Span::styled(
+                format!("   {}", status.as_str()),
+                Style::default().fg(Color::Gray),
+            )));
+        }
+    }
+
+    lines
 }
 
 fn quadrant_selection_lines(selection_index: usize) -> Vec<TextLine<'static>> {

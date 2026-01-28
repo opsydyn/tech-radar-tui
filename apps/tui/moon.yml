@@ -62,3 +62,11 @@ tasks:
     options:
       interactive: true
       outputStyle: 'stream'
+
+  headless:
+    command: 'cargo run --release --bin ratatui_adr-gen -- --headless'
+    inputs:
+      - '@globs(sources)'
+    options:
+      interactive: false
+      outputStyle: 'stream'

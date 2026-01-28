@@ -33,6 +33,7 @@ impl BlipData {
 pub enum InputState {
     WaitingForCommand,
     EnteringTechnology,
+    ChoosingAdrStatus,
     ChoosingQuadrant,
     ChoosingRing,
     GeneratingFile,
@@ -53,6 +54,48 @@ pub enum AppScreen {
 pub enum InputMode {
     Adr,
     Blip,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum AdrStatus {
+    Proposed,
+    Accepted,
+    Rejected,
+    Deprecated,
+    Superseded,
+}
+
+impl AdrStatus {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Proposed => "proposed",
+            Self::Accepted => "accepted",
+            Self::Rejected => "rejected",
+            Self::Deprecated => "deprecated",
+            Self::Superseded => "superseded",
+        }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Proposed => "Proposed",
+            Self::Accepted => "Accepted",
+            Self::Rejected => "Rejected",
+            Self::Deprecated => "Deprecated",
+            Self::Superseded => "Superseded",
+        }
+    }
+
+    pub const fn from_index(index: usize) -> Option<Self> {
+        match index {
+            0 => Some(Self::Proposed),
+            1 => Some(Self::Accepted),
+            2 => Some(Self::Rejected),
+            3 => Some(Self::Deprecated),
+            4 => Some(Self::Superseded),
+            _ => None,
+        }
+    }
 }
 
 /// Represents which field is currently being edited in the EditBlip screen
@@ -159,6 +202,7 @@ pub struct App {
     pub current_input: String,
     pub blip_data: BlipData,
     pub input_mode: Option<InputMode>,
+    pub adr_status: Option<AdrStatus>,
     pub status_message: String,
     pub actions: AppActions,
     pub animation_counter: f64,
@@ -175,6 +219,7 @@ pub struct App {
     pub adr_filter_name: Option<String>,
     pub quadrant_selection_index: usize,
     pub ring_selection_index: usize,
+    pub adr_status_selection_index: usize,
     pub input_mode_selection_index: usize,
     pub chart_tab_index: usize,
     pub last_checked_blip_name: Option<String>,
@@ -189,6 +234,7 @@ impl App {
             current_input: String::new(),
             blip_data: BlipData::new(),
             input_mode: None,
+            adr_status: None,
             status_message: String::new(),
             actions: AppActions::new(),
             animation_counter: 0.0,
@@ -205,6 +251,7 @@ impl App {
             adr_filter_name: None,
             quadrant_selection_index: 0,
             ring_selection_index: 0,
+            adr_status_selection_index: 0,
             input_mode_selection_index: 0,
             chart_tab_index: 0,
             last_checked_blip_name: None,
@@ -257,6 +304,14 @@ impl App {
                     return;
                 }
             }
+            InputState::ChoosingAdrStatus => {
+                if let Some(status) = AdrStatus::from_index(self.adr_status_selection_index) {
+                    self.adr_status = Some(status);
+                } else {
+                    self.status_message = "Invalid status selection.".to_string();
+                    return;
+                }
+            }
             _ => {}
         }
         self.status_message.clear();
@@ -273,8 +328,23 @@ impl App {
                 InputState::EnteringTechnology
             }
             InputState::EnteringTechnology => {
-                self.quadrant_selection_index = 0;
-                InputState::ChoosingQuadrant
+                if self.input_mode == Some(InputMode::Adr) {
+                    self.adr_status = Some(AdrStatus::Proposed);
+                    self.adr_status_selection_index = 0;
+                    InputState::ChoosingAdrStatus
+                } else {
+                    self.quadrant_selection_index = 0;
+                    InputState::ChoosingQuadrant
+                }
+            }
+            InputState::ChoosingAdrStatus => {
+                if let Some(status) = AdrStatus::from_index(self.adr_status_selection_index) {
+                    self.adr_status = Some(status);
+                    InputState::GeneratingFile
+                } else {
+                    self.status_message = "Invalid status selection.".to_string();
+                    InputState::ChoosingAdrStatus
+                }
             }
             InputState::ChoosingQuadrant => {
                 self.ring_selection_index = 0;
@@ -301,9 +371,11 @@ impl App {
         self.current_input.clear();
         self.blip_data = BlipData::new();
         self.input_mode = None;
+        self.adr_status = None;
         self.status_message.clear();
         self.quadrant_selection_index = 0;
         self.ring_selection_index = 0;
+        self.adr_status_selection_index = 0;
         self.input_mode_selection_index = 0;
         self.chart_tab_index = 0;
         self.last_checked_blip_name = None;
@@ -341,17 +413,12 @@ impl App {
         let file_name = format!("{date_prefix}-{sanitized_name}");
         let file_path = get_file_path(&target_dir, &file_name);
 
-        let quadrant = self
-            .blip_data
-            .quadrant
-            .ok_or_else(|| color_eyre::eyre::eyre!("Quadrant selection missing"))?;
-        let ring = self
-            .blip_data
-            .ring
-            .ok_or_else(|| color_eyre::eyre::eyre!("Ring selection missing"))?;
-
-        match input_mode {
+        let content = match input_mode {
             InputMode::Adr => {
+                let adr_status = self
+                    .adr_status
+                    .ok_or_else(|| color_eyre::eyre::eyre!("ADR status missing"))?;
+
                 let adr_params = AdrMetadataParams {
                     id,
                     title: self.blip_data.name.clone(),
@@ -378,8 +445,24 @@ impl App {
 
                     self.actions.update_blip(&params).await?;
                 }
+
+                self.generate_adr_content(
+                    &id.to_string(),
+                    &timestamp,
+                    adr_status,
+                    self.blip_data.name.as_str(),
+                )
             }
             InputMode::Blip => {
+                let quadrant = self
+                    .blip_data
+                    .quadrant
+                    .ok_or_else(|| color_eyre::eyre::eyre!("Quadrant selection missing"))?;
+                let ring = self
+                    .blip_data
+                    .ring
+                    .ok_or_else(|| color_eyre::eyre::eyre!("Ring selection missing"))?;
+
                 if self
                     .actions
                     .blip_exists_by_name(&self.blip_data.name)
@@ -405,13 +488,9 @@ impl App {
                 };
                 self.actions.insert_blip(&blip_params).await?;
                 self.fetch_blips().await?;
-            }
-        }
 
-        let id_string = id.to_string();
-        let content = match input_mode {
-            InputMode::Adr => self.generate_adr_content(&id_string, &timestamp, quadrant, ring),
-            InputMode::Blip => self.generate_blip_content(&id_string, &timestamp, quadrant, ring),
+                self.generate_blip_content(&id.to_string(), &timestamp, quadrant, ring)
+            }
         };
 
         std::fs::create_dir_all(target_dir)?;
@@ -425,21 +504,22 @@ impl App {
         &self,
         id: &str,
         timestamp: &str,
-        quadrant: Quadrant,
-        ring: Ring,
+        status: AdrStatus,
+        blip_name: &str,
     ) -> String {
-        let quadrant = quadrant.as_str();
-        let ring = ring.as_str();
+        let blip = if blip_name.is_empty() {
+            "null"
+        } else {
+            blip_name
+        };
 
         format!(
             r#"---
  id: "{}"
  title: "{}"
- blip: "{}"
+ blip: {}
  date: {}
- status: "accepted"
- quadrant: "{}"
- ring: "{}"
+ status: "{}"
  ---
  
  # {}
@@ -458,10 +538,9 @@ impl App {
  "#,
             id,
             self.blip_data.name,
-            self.blip_data.name,
+            blip,
             timestamp,
-            quadrant,
-            ring,
+            status.as_str(),
             self.blip_data.name
         )
     }

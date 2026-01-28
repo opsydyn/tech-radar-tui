@@ -1,5 +1,5 @@
 use crate::app::input::helpers::{wrap_decrement, wrap_increment};
-use crate::app::state::{App, AppScreen, InputMode, InputState};
+use crate::app::state::{AdrStatus, App, AppScreen, InputMode, InputState};
 use crate::db::queries::blip_exists_by_name;
 use crossterm::event::KeyCode;
 
@@ -7,6 +7,7 @@ pub async fn handle_main_input(app: &mut App, key: KeyCode) {
     match app.input_state {
         InputState::WaitingForCommand => handle_mode_selection(app, key).await,
         InputState::EnteringTechnology => handle_text_input(app, key).await,
+        InputState::ChoosingAdrStatus => handle_adr_status_selection(app, key),
         InputState::ChoosingQuadrant => handle_quadrant_selection(app, key),
         InputState::ChoosingRing => handle_ring_selection(app, key),
         InputState::GeneratingFile => {}
@@ -117,6 +118,9 @@ async fn handle_text_input(app: &mut App, key: KeyCode) {
                         }
                     }
                 }
+            } else {
+                app.adr_status_selection_index = 0;
+                app.adr_status = Some(AdrStatus::Proposed);
             }
 
             app.advance_state();
@@ -151,6 +155,29 @@ async fn handle_fetch_adrs(app: &mut App) {
             eprintln!("[DEBUG] fetch_adrs error: {e:?}");
             app.status_message = format!("Failed to fetch ADRs from database: {e}");
         }
+    }
+}
+
+fn handle_adr_status_selection(app: &mut App, key: KeyCode) {
+    let max_statuses = 5;
+    match key {
+        KeyCode::Up => {
+            app.adr_status_selection_index =
+                wrap_decrement(app.adr_status_selection_index, max_statuses);
+        }
+        KeyCode::Down => {
+            app.adr_status_selection_index =
+                wrap_increment(app.adr_status_selection_index, max_statuses);
+        }
+        KeyCode::Enter => {
+            app.process_current_input();
+            app.advance_state();
+        }
+
+        KeyCode::Esc => {
+            app.reset();
+        }
+        _ => {}
     }
 }
 

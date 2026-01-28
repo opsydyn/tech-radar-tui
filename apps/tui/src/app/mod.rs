@@ -6,4 +6,4 @@ pub mod input;
 pub mod state;
 
 pub use input::handle_input;
-pub use state::{App, InputMode, InputState};
+pub use state::{AdrStatus, App, InputMode, InputState};
