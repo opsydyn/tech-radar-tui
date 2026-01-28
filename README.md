@@ -2,7 +2,7 @@
 
 [![Release](https://img.shields.io/github/v/release/opsydyn/tech-radar-tui?display_name=tag&sort=semver)](https://github.com/opsydyn/tech-radar-tui/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/opsydyn/tech-radar-tui/total)](https://github.com/opsydyn/tech-radar-tui/releases)
-[![CI](https://img.shields.io/github/actions/workflow/status/opsydyn/tech-radar-tui/ci.yml?branch=main)](https://github.com/opsydyn/tech-radar-tui/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/opsydyn/tech-radar-tui/ci.yml?branch=master)](https://github.com/opsydyn/tech-radar-tui/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/opsydyn/tech-radar-tui)](LICENSE)
 
 ![Tech Radar mascot](tech_rdar_rat.webp)
