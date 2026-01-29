@@ -26,10 +26,20 @@ Keyboard-driven terminal UI for creating Architectural Decision Records (ADRs) a
 moon run tui:dev
 ```
 
-Or run via Cargo:
+## Run with Cargo
+
+Clone the repo and build/run locally:
 
 ```bash
-cargo run --manifest-path apps/tui/Cargo.toml --release
+git clone https://github.com/opsydyn/tech-radar-tui.git
+cd tech-radar-tui
+cargo run --release --manifest-path apps/tui/Cargo.toml
+```
+
+Or run with Moon:
+
+```bash
+moon run tui:dev
 ```
 
 ## Headless stats
@@ -55,6 +65,16 @@ curl -L -o tech-radar-tui https://github.com/opsydyn/tech-radar-tui/releases/dow
 chmod +x tech-radar-tui
 ./tech-radar-tui
 ```
+
+macOS first run
+
+```bash
+chmod +x tech-radar-tui-macos
+xattr -d com.apple.quarantine tech-radar-tui-macos
+./tech-radar-tui-macos
+```
+
+If macOS still blocks the app: System Settings → Privacy & Security → "Open Anyway" for tech-radar-tui-macos.
 
 ## Release checks and tags
 
