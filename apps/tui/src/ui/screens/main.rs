@@ -399,7 +399,7 @@ fn adr_status_selection_lines(selection_index: usize) -> Vec<TextLine<'static>> 
         if is_selected {
             lines.push(TextLine::from(Span::styled(
                 format!("   {}", status.as_str()),
-                Style::default().fg(Color::Gray),
+                Style::default().fg(Color::DarkGray),
             )));
         }
     }
@@ -435,7 +435,7 @@ fn quadrant_selection_lines(selection_index: usize) -> Vec<TextLine<'static>> {
         if is_selected {
             lines.push(TextLine::from(Span::styled(
                 format!("   {}", quadrant.as_str()),
-                Style::default().fg(Color::Gray),
+                Style::default().fg(Color::DarkGray),
             )));
         }
     }
@@ -466,7 +466,7 @@ fn ring_selection_lines(selection_index: usize) -> Vec<TextLine<'static>> {
         if is_selected {
             lines.push(TextLine::from(Span::styled(
                 format!("   {}", ring.as_str()),
-                Style::default().fg(Color::Gray),
+                Style::default().fg(Color::DarkGray),
             )));
         }
     }

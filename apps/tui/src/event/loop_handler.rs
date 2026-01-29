@@ -126,7 +126,6 @@ impl TryFrom<(FileGenState, &FileGenEvent, &mut App)> for NextState {
 
         match (current_state, event) {
             (FileGenState::Idle, FileGenEvent::StartGeneration) => {
-                eprintln!("Starting file generation...");
                 app.status_message = "Generating file...".to_string();
                 Ok(FileGenState::Generating.next_state())
             }
@@ -137,13 +136,11 @@ impl TryFrom<(FileGenState, &FileGenEvent, &mut App)> for NextState {
                     .and_then(|name| name.to_str())
                     .unwrap_or("unknown");
 
-                eprintln!("File generated successfully: {filename}");
                 app.status_message = format!("File generated: {filename}");
                 app.input_state = InputState::Completed;
                 Ok(FileGenState::Success.next_state())
             }
             (FileGenState::Generating, FileGenEvent::Error(error)) => {
-                eprintln!("Error generating file: {error}");
                 app.status_message = format!("Error: {error}");
 
                 if error.contains("already exists") {
@@ -156,7 +153,6 @@ impl TryFrom<(FileGenState, &FileGenEvent, &mut App)> for NextState {
                 Ok(FileGenState::Error.next_state())
             }
             (FileGenState::Success | FileGenState::Error, FileGenEvent::Reset) => {
-                eprintln!("Resetting file generation state");
                 Ok(FileGenState::Idle.next_state())
             }
             _ => Err(StateTransitionError {
@@ -169,10 +165,7 @@ impl TryFrom<(FileGenState, &FileGenEvent, &mut App)> for NextState {
 
 /// Run the application in headless mode (no UI)
 pub async fn run_headless(app: &mut App) -> Result<()> {
-    eprintln!("Running in headless mode...");
-
     // Initialize database
-    eprintln!("Initializing database...");
     app.initialize_db().await?;
 
     render_headless_stats(app).await?;
@@ -234,58 +227,41 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
     // Create our file generation state machine
     let mut file_gen_machine = FileGenMachine::new(FileGenState::Idle);
 
-    eprintln!("Entering application main loop");
-
     loop {
         // Update animations
         app.update();
 
         // Draw the UI with better error context
         if let Err(e) = terminal.draw(|f| ui::ui(app, f)) {
-            eprintln!("Error drawing terminal UI: {e}");
-            eprintln!("Error details: {e:?}");
             return Err(color_eyre::eyre::eyre!("Terminal draw error: {e}"));
         }
 
         // Handle events with improved error context
-        match event::poll(std::time::Duration::from_millis(EVENT_POLL_TIMEOUT)) {
-            Ok(true) => {
-                // Event is available
-                match event::read() {
-                    Ok(Event::Key(key)) => {
-                        // Remove or conditionally log key events
-                        // eprintln!("Key event received: {:?}", key.code);
-                        handle_input(app, key.code).await;
-                        if !app.running {
-                            eprintln!("App requested exit");
-                            break;
-                        }
-                    }
-                    Ok(Event::Resize(width, height)) => {
-                        eprintln!("Terminal resized to {width}x{height}");
-                        // Force a redraw after resize
-                        if let Err(e) = terminal.draw(|f| ui::ui(app, f)) {
-                            eprintln!("Error redrawing after resize: {e}");
-                        }
-                    }
-                    Ok(
-                        Event::Mouse(_) | Event::FocusGained | Event::FocusLost | Event::Paste(_),
-                    ) => {
-                        // Ignore non-key events for now
-                    }
-                    Err(e) => {
-                        eprintln!("Error reading event: {e}");
-                        // Non-fatal error, continue the loop
+        if matches!(
+            event::poll(std::time::Duration::from_millis(EVENT_POLL_TIMEOUT)),
+            Ok(true)
+        ) {
+            // Event is available
+            match event::read() {
+                Ok(Event::Key(key)) => {
+                    handle_input(app, key.code).await;
+                    if !app.running {
+                        break;
                     }
                 }
+                Ok(Event::Resize(_, _)) => {
+                    // Force a redraw after resize
+                    if terminal.draw(|f| ui::ui(app, f)).is_err() {
+                        // Non-fatal redraw error
+                    }
+                }
+                Ok(Event::Mouse(_) | Event::FocusGained | Event::FocusLost | Event::Paste(_))
+                | Err(_) => {
+                    // Ignore non-key events for now
+                }
             }
-            Ok(false) => {
-                // No event available, continue with application logic
-            }
-            Err(e) => {
-                eprintln!("Error polling for events: {e}");
-                // Non-fatal error, continue the loop
-            }
+        } else {
+            // No event available, continue with application logic
         }
 
         // Handle file generation with state machine
@@ -293,8 +269,10 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
             && file_gen_machine.state() == FileGenState::Idle
         {
             // Transition to generating state
-            if let Err(e) = file_gen_machine.process_event(&FileGenEvent::StartGeneration, app) {
-                eprintln!("Error starting file generation: {e}");
+            if file_gen_machine
+                .process_event(&FileGenEvent::StartGeneration, app)
+                .is_err()
+            {
                 continue;
             }
 
@@ -302,34 +280,38 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
             match app.generate_file().await {
                 Ok(path) => {
                     // Transition to success state
-                    if let Err(e) =
-                        file_gen_machine.process_event(&FileGenEvent::Success(path), app)
+                    if file_gen_machine
+                        .process_event(&FileGenEvent::Success(path), app)
+                        .is_err()
                     {
-                        eprintln!("Error processing success event: {e}");
+                        // Non-fatal state transition error
                     }
                 }
                 Err(e) => {
                     // Transition to error state
                     let error_msg = format!("{e}");
-                    if let Err(e) =
-                        file_gen_machine.process_event(&FileGenEvent::Error(error_msg), app)
+                    if file_gen_machine
+                        .process_event(&FileGenEvent::Error(error_msg), app)
+                        .is_err()
                     {
-                        eprintln!("Error processing error event: {e}");
+                        // Non-fatal state transition error
                     }
                 }
             }
 
             // Reset the state machine for next use
-            if let Err(e) = file_gen_machine.process_event(&FileGenEvent::Reset, app) {
-                eprintln!("Error resetting file generation state: {e}");
+            if file_gen_machine
+                .process_event(&FileGenEvent::Reset, app)
+                .is_err()
+            {
+                // Non-fatal reset error
             }
 
             // Force a redraw to show the updated state
-            if let Err(e) = terminal.draw(|f| ui::ui(app, f)) {
-                eprintln!("Error redrawing UI after file generation: {e}");
+            if terminal.draw(|f| ui::ui(app, f)).is_err() {
+                // Non-fatal redraw error
             }
         }
     }
-    eprintln!("Exiting application main loop");
     Ok(())
 }

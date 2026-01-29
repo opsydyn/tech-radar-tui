@@ -12,7 +12,7 @@ pub async fn handle_main_input(app: &mut App, key: KeyCode) {
         InputState::ChoosingRing => handle_ring_selection(app, key),
         InputState::GeneratingFile => {}
         InputState::Completed => match key {
-            KeyCode::Char('n') => {
+            KeyCode::Char('n') | KeyCode::Esc => {
                 app.reset();
             }
             KeyCode::Char('q') => {
@@ -20,7 +20,6 @@ pub async fn handle_main_input(app: &mut App, key: KeyCode) {
             }
             KeyCode::Char('l') => {
                 if let Err(e) = app.fetch_blips().await {
-                    eprintln!("[DEBUG] fetch_blips error: {e:?}");
                     app.status_message = format!("Failed to fetch blips from database: {e}");
                 } else {
                     app.selected_blip_index = 0;
@@ -29,7 +28,6 @@ pub async fn handle_main_input(app: &mut App, key: KeyCode) {
             }
             KeyCode::Char('v') => {
                 if let Err(e) = app.fetch_adrs_for_blip("").await {
-                    eprintln!("[DEBUG] fetch_adrs error: {e:?}");
                     app.status_message = format!("Failed to fetch ADRs from database: {e}");
                 } else {
                     app.selected_adr_index = 0;
@@ -139,7 +137,6 @@ async fn handle_fetch_blips(app: &mut App) {
             app.screen = AppScreen::ViewBlips;
         }
         Err(e) => {
-            eprintln!("[DEBUG] fetch_blips error: {e:?}");
             app.status_message = format!("Failed to fetch blips from database: {e}");
         }
     }
@@ -152,7 +149,6 @@ async fn handle_fetch_adrs(app: &mut App) {
             app.screen = AppScreen::ViewAdrs;
         }
         Err(e) => {
-            eprintln!("[DEBUG] fetch_adrs error: {e:?}");
             app.status_message = format!("Failed to fetch ADRs from database: {e}");
         }
     }
