@@ -2,7 +2,7 @@ use crate::app::state::{App, AppScreen, InputState};
 use crossterm::event::KeyCode;
 
 pub fn handle_help_toggle(app: &mut App, key: KeyCode) -> bool {
-    if key == KeyCode::F(1) {
+    if matches!(key, KeyCode::Char('h' | '?')) {
         app.show_help = !app.show_help;
         return true;
     }

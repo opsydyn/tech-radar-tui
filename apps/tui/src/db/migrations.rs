@@ -13,6 +13,7 @@ pub async fn setup_database(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
             blip_name TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'proposed',
             timestamp TEXT NOT NULL,
             UNIQUE(title, timestamp)
         )",
@@ -42,6 +43,14 @@ pub async fn setup_database(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         "adr_log",
         "blip_name",
         "ALTER TABLE adr_log ADD COLUMN blip_name TEXT NOT NULL DEFAULT ''",
+    )
+    .await?;
+
+    ensure_column_exists(
+        pool,
+        "adr_log",
+        "status",
+        "ALTER TABLE adr_log ADD COLUMN status TEXT NOT NULL DEFAULT 'proposed'",
     )
     .await?;
 
@@ -297,10 +306,11 @@ pub async fn insert_new_adr_with_params(
     pool: &SqlitePool,
     params: &AdrMetadataParams,
 ) -> Result<(), sqlx::Error> {
-    query("INSERT INTO adr_log (id, title, blip_name, timestamp) VALUES (?, ?, ?, ?)")
+    query("INSERT INTO adr_log (id, title, blip_name, status, timestamp) VALUES (?, ?, ?, ?, ?)")
         .bind(params.id)
         .bind(&params.title)
         .bind(&params.blip_name)
+        .bind(&params.status)
         .bind(&params.created)
         .execute(pool)
         .await?;

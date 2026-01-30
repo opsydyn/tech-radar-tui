@@ -1,10 +1,12 @@
 use crate::app::state::EditField;
 use crate::app::App;
+use crate::ui::widgets::popup::{centered_rect, ClearWidget};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line as TextLine, Span, Text};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
+use std::time::Instant;
 
 pub fn render_edit_blip(app: &App, f: &mut Frame<'_>) {
     let area = f.area();
@@ -35,7 +37,7 @@ pub fn render_edit_blip(app: &App, f: &mut Frame<'_>) {
                 Constraint::Length(1), // Quadrant
                 Constraint::Length(1), // Tag
                 Constraint::Length(3), // Description
-                Constraint::Length(1), // Spacer
+                Constraint::Length(1), // Save
                 Constraint::Length(1), // Help text
             ])
             .split(form_area);
@@ -68,7 +70,8 @@ pub fn render_edit_blip(app: &App, f: &mut Frame<'_>) {
                 "  "
             };
 
-            Span::styled(format!("{prefix}{name}: "), style)
+            let suffix = if field == EditField::Save { "" } else { ": " };
+            Span::styled(format!("{prefix}{name}{suffix}"), style)
         };
 
         let name_text = TextLine::from(vec![
@@ -105,42 +108,46 @@ pub fn render_edit_blip(app: &App, f: &mut Frame<'_>) {
         ]);
         f.render_widget(Paragraph::new(description_text), form_chunks[4]);
 
+        let save_style = field_style(EditField::Save);
+        let save_block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(save_style);
+        let save = Paragraph::new(Text::from(Span::styled("Save", save_style)))
+            .block(save_block)
+            .alignment(Alignment::Center);
+        f.render_widget(save, form_chunks[5]);
+
         let status_text = if edit_state.editing {
             match edit_state.field {
                 EditField::Ring | EditField::Quadrant => {
-                    "Editing mode: ←/→ to cycle through options, Enter to confirm, Esc to cancel"
+                    "Editing: ←/→ cycle options, Enter confirm, Esc cancel"
                 }
-                _ => "Editing mode: Type to edit, Enter to confirm, Esc to cancel",
+                _ => "Editing: type to edit, Enter confirm, Esc cancel",
             }
         } else {
-            "Navigation mode: ↑/↓ to select field, Enter to edit, Esc to exit"
+            "Navigate: ↑/↓ select, Enter edit/save, Esc exit"
         };
 
         let status_line = Paragraph::new(status_text)
             .alignment(Alignment::Center)
             .style(Style::default().fg(Color::Gray));
 
-        f.render_widget(status_line, form_chunks[5]);
+        f.render_widget(status_line, form_chunks[6]);
 
-        let help_text = TextLine::from(vec![
-            Span::styled(
-                "ESC",
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(": Cancel   "),
-            Span::styled(
-                "S",
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(": Save Changes"),
-        ]);
-        f.render_widget(
-            Paragraph::new(help_text).alignment(Alignment::Center),
-            form_chunks[6],
-        );
+        if let Some(until) = app.save_notice_until {
+            if until > Instant::now() {
+                let popup_area = centered_rect(40, 20, area);
+                f.render_widget(ClearWidget, popup_area);
+                let popup = Block::default()
+                    .title("Saved")
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Green));
+                let message = Paragraph::new(app.status_message.as_str())
+                    .block(popup)
+                    .alignment(Alignment::Center);
+                f.render_widget(message, popup_area);
+                f.set_cursor_position((0, 0));
+            }
+        }
     }
 }

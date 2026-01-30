@@ -61,7 +61,9 @@ async fn handle_adr_action(app: &mut App) {
     app.blip_data.quadrant = blip.quadrant;
     app.blip_data.ring = blip.ring;
 
-    app.input_state = InputState::GeneratingFile;
+    app.adr_status_selection_index = 0;
+    app.adr_status = Some(crate::app::state::AdrStatus::Proposed);
+    app.input_state = InputState::ChoosingAdrStatus;
     app.screen = AppScreen::Main;
-    app.status_message = "Generating ADR...".to_string();
+    app.status_message = "Select ADR status".to_string();
 }

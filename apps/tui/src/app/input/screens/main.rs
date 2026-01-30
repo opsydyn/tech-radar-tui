@@ -56,14 +56,22 @@ async fn handle_mode_selection(app: &mut App, key: KeyCode) {
         KeyCode::Enter => {
             app.advance_state();
         }
+        KeyCode::Char('a') => {
+            app.input_mode_selection_index = 0;
+            app.advance_state();
+        }
+        KeyCode::Char('b') => {
+            app.input_mode_selection_index = 1;
+            app.advance_state();
+        }
+        KeyCode::Char('n') | KeyCode::Esc => {
+            app.reset();
+        }
         KeyCode::Char('l') => {
             handle_fetch_blips(app).await;
         }
         KeyCode::Char('v') => {
             handle_fetch_adrs(app).await;
-        }
-        KeyCode::Esc => {
-            app.reset();
         }
         KeyCode::Char('q') => {
             app.running = false;

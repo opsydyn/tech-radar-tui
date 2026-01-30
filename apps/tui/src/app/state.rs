@@ -8,6 +8,8 @@ use std::{
     time::Instant,
 };
 
+use crate::app::input::screens::edit_adr::AdrEditState;
+
 #[derive(Debug)]
 pub struct BlipData {
     pub name: String,
@@ -45,6 +47,9 @@ pub enum AppScreen {
     Main,
     ViewBlips,
     ViewAdrs,
+    AdrActions,
+    AdrDetails,
+    EditAdr,
     BlipActions,
     BlipDetails,
     EditBlip,
@@ -96,6 +101,28 @@ impl AdrStatus {
             _ => None,
         }
     }
+
+    pub const fn all() -> [Self; 5] {
+        [
+            Self::Proposed,
+            Self::Accepted,
+            Self::Rejected,
+            Self::Deprecated,
+            Self::Superseded,
+        ]
+    }
+
+    pub fn next(self) -> Self {
+        let statuses = Self::all();
+        let index = statuses.iter().position(|item| *item == self).unwrap_or(0);
+        statuses[(index + 1) % statuses.len()]
+    }
+
+    pub fn prev(self) -> Self {
+        let statuses = Self::all();
+        let index = statuses.iter().position(|item| *item == self).unwrap_or(0);
+        statuses[(index + statuses.len() - 1) % statuses.len()]
+    }
 }
 
 /// Represents which field is currently being edited in the EditBlip screen
@@ -106,26 +133,27 @@ pub enum EditField {
     Quadrant,
     Tag,
     Description,
+    Save,
 }
 
 /// Holds the temporary state of a blip being edited
 #[derive(Debug, Clone)]
 pub struct EditBlipState {
+    pub id: i32,
+    pub adr_id: Option<i32>,
     pub field: EditField,
     pub name: String,
     pub ring: String,
     pub quadrant: String,
     pub tag: String,
     pub description: String,
-    pub editing: bool,         // Whether we're actively editing the current field
-    pub ring_index: usize,     // Index of the currently selected ring
-    pub quadrant_index: usize, // Index of the currently selected quadrant
+    pub editing: bool,
+    pub ring_index: usize,
+    pub quadrant_index: usize,
 }
 
 impl EditBlipState {
-    /// Create a new EditBlipState from a BlipRecord
     pub fn from_blip(blip: &BlipRecord) -> Self {
-        // Determine the initial ring index based on the blip's ring value
         let ring_index = match blip.ring {
             Some(crate::Ring::Assess) => 1,
             Some(crate::Ring::Trial) => 2,
@@ -133,7 +161,6 @@ impl EditBlipState {
             _ => 0,
         };
 
-        // Determine the initial quadrant index based on the blip's quadrant value
         let quadrant_index = match blip.quadrant {
             Some(crate::Quadrant::Languages) => 1,
             Some(crate::Quadrant::Tools) => 2,
@@ -142,6 +169,8 @@ impl EditBlipState {
         };
 
         Self {
+            id: blip.id,
+            adr_id: blip.adr_id,
             field: EditField::Name,
             name: blip.name.clone(),
             ring: blip
@@ -158,36 +187,30 @@ impl EditBlipState {
         }
     }
 
-    /// Get all valid ring options
     pub const fn ring_options() -> &'static [&'static str] {
         &["hold", "assess", "trial", "adopt"]
     }
 
-    /// Get all valid quadrant options
     pub const fn quadrant_options() -> &'static [&'static str] {
         &["platforms", "languages", "tools", "techniques"]
     }
 
-    /// Cycle to the next ring option
     pub fn next_ring(&mut self) {
         self.ring_index = (self.ring_index + 1) % Self::ring_options().len();
         self.ring = Self::ring_options()[self.ring_index].to_string();
     }
 
-    /// Cycle to the previous ring option
     pub fn prev_ring(&mut self) {
         self.ring_index =
             (self.ring_index + Self::ring_options().len() - 1) % Self::ring_options().len();
         self.ring = Self::ring_options()[self.ring_index].to_string();
     }
 
-    /// Cycle to the next quadrant option
     pub fn next_quadrant(&mut self) {
         self.quadrant_index = (self.quadrant_index + 1) % Self::quadrant_options().len();
         self.quadrant = Self::quadrant_options()[self.quadrant_index].to_string();
     }
 
-    /// Cycle to the previous quadrant option
     pub fn prev_quadrant(&mut self) {
         self.quadrant_index = (self.quadrant_index + Self::quadrant_options().len() - 1)
             % Self::quadrant_options().len();
@@ -195,7 +218,6 @@ impl EditBlipState {
     }
 }
 
-#[derive(Debug)]
 pub struct App {
     pub running: bool,
     pub input_state: InputState,
@@ -204,6 +226,7 @@ pub struct App {
     pub input_mode: Option<InputMode>,
     pub adr_status: Option<AdrStatus>,
     pub status_message: String,
+    pub save_notice_until: Option<std::time::Instant>,
     pub actions: AppActions,
     pub animation_counter: f64,
     pub last_frame: Instant,
@@ -213,7 +236,9 @@ pub struct App {
     pub blips: Vec<crate::db::models::BlipRecord>,
     pub selected_blip_index: usize,
     pub edit_blip_state: Option<EditBlipState>,
+    pub edit_adr_state: Option<AdrEditState>,
     pub blip_action_index: usize,
+    pub adr_action_index: usize,
     pub selected_adr_index: usize,
     pub adrs: Vec<crate::db::models::AdrRecord>,
     pub adr_filter_name: Option<String>,
@@ -236,8 +261,10 @@ impl App {
             input_mode: None,
             adr_status: None,
             status_message: String::new(),
+            save_notice_until: None,
             actions: AppActions::new(),
             animation_counter: 0.0,
+
             last_frame: Instant::now(),
             animation_paused: false,
             show_help: false,
@@ -245,7 +272,9 @@ impl App {
             blips: Vec::new(),
             selected_blip_index: 0,
             edit_blip_state: None,
+            edit_adr_state: None,
             blip_action_index: 0,
+            adr_action_index: 0,
             selected_adr_index: 0,
             adrs: Vec::new(),
             adr_filter_name: None,
@@ -255,6 +284,7 @@ impl App {
             input_mode_selection_index: 0,
             chart_tab_index: 0,
             last_checked_blip_name: None,
+
             last_blip_name_exists: false,
         }
     }
@@ -269,6 +299,13 @@ impl App {
         let now = Instant::now();
         let delta = now.duration_since(self.last_frame);
         self.last_frame = now;
+
+        if let Some(until) = self.save_notice_until {
+            if Instant::now() >= until {
+                self.save_notice_until = None;
+                self.status_message.clear();
+            }
+        }
 
         if self.animation_paused {
             return;
@@ -373,6 +410,7 @@ impl App {
         self.input_mode = None;
         self.adr_status = None;
         self.status_message.clear();
+        self.save_notice_until = None;
         self.quadrant_selection_index = 0;
         self.ring_selection_index = 0;
         self.adr_status_selection_index = 0;
@@ -384,6 +422,8 @@ impl App {
         self.adrs.clear();
         self.adr_filter_name = None;
         self.blip_action_index = 0;
+        self.adr_action_index = 0;
+        self.edit_adr_state = None;
     }
 
     pub fn toggle_animation_pause(&mut self) {
@@ -423,6 +463,7 @@ impl App {
                     id,
                     title: self.blip_data.name.clone(),
                     blip_name: self.blip_data.name.clone(),
+                    status: adr_status.as_str().to_string(),
                     created: timestamp.clone(),
                 };
 

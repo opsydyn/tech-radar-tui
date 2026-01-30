@@ -7,6 +7,7 @@ pub struct AdrRecord {
     pub id: i32,
     pub title: String,
     pub blip_name: String,
+    pub status: String,
     pub timestamp: String,
 }
 
@@ -33,6 +34,7 @@ pub struct AdrMetadataParams {
     pub id: i32,
     pub title: String,
     pub blip_name: String,
+    pub status: String,
     pub created: String,
 }
 

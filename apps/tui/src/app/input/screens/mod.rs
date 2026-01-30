@@ -1,10 +1,13 @@
 use crate::app::state::{App, AppScreen};
 use crossterm::event::KeyCode;
 
+mod adr_actions;
+mod adr_details;
 mod adrs;
 mod blip_actions;
 mod blip_details;
 mod blips;
+pub mod edit_adr;
 mod edit_blip;
 mod help;
 mod main;
@@ -22,6 +25,9 @@ pub async fn dispatch_input(app: &mut App, key: KeyCode) {
         AppScreen::ViewBlips => blips::handle_view_blips_input(app, key),
         AppScreen::BlipActions => blip_actions::handle_blip_actions_input(app, key).await,
         AppScreen::ViewAdrs => adrs::handle_view_adrs_input(app, key),
+        AppScreen::AdrActions => adr_actions::handle_adr_actions_input(app, key),
+        AppScreen::AdrDetails => adr_details::handle_adr_details_input(app, key),
+        AppScreen::EditAdr => edit_adr::handle_edit_adr_input(app, key).await,
         AppScreen::BlipDetails => blip_details::handle_blip_details_input(app, key),
         AppScreen::EditBlip => edit_blip::handle_edit_blip_input(app, key).await,
         AppScreen::Main => main::handle_main_input(app, key).await,

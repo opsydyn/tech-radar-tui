@@ -14,6 +14,7 @@ pub async fn test_database_setup() -> Result<()> {
         id: 1,
         title: "Test ADR".to_string(),
         blip_name: "Test Blip".to_string(),
+        status: "proposed".to_string(),
         created: Local::now().to_string(),
     };
 

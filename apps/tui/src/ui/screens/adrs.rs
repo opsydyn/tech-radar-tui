@@ -1,11 +1,21 @@
 use crate::app::App;
-use crate::ui::widgets::radar::quadrant_color;
 use crate::ui::widgets::tables::scroll_offset;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line as TextLine, Span};
 use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table};
 use ratatui::Frame;
+
+fn adr_status_color(status: &str) -> Color {
+    match status {
+        "proposed" => Color::Cyan,
+        "accepted" => Color::Green,
+        "rejected" => Color::Red,
+        "deprecated" => Color::Yellow,
+        "superseded" => Color::Magenta,
+        _ => Color::White,
+    }
+}
 
 pub fn render_adrs_view(app: &App, f: &mut Frame<'_>) {
     let area = f.area();
@@ -25,6 +35,7 @@ pub fn render_adrs_view(app: &App, f: &mut Frame<'_>) {
     let header = Row::new(vec![
         Cell::from("ID"),
         Cell::from("Title"),
+        Cell::from("Status"),
         Cell::from("Blip"),
         Cell::from("Timestamp"),
     ])
@@ -49,11 +60,12 @@ pub fn render_adrs_view(app: &App, f: &mut Frame<'_>) {
                 .fg(Color::White)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(quadrant_color("platforms"))
+            Style::default().fg(adr_status_color(&adr.status))
         };
         Row::new(vec![
             Cell::from(adr.id.to_string()),
             Cell::from(adr.title.clone()),
+            Cell::from(adr.status.clone()),
             Cell::from(adr.blip_name.clone()),
             Cell::from(adr.timestamp.clone()),
         ])
@@ -75,7 +87,8 @@ pub fn render_adrs_view(app: &App, f: &mut Frame<'_>) {
     let widths = [
         Constraint::Length(4),
         Constraint::Length(20),
-        Constraint::Length(20),
+        Constraint::Length(12),
+        Constraint::Length(18),
         Constraint::Length(12),
     ];
 
@@ -112,7 +125,7 @@ pub fn render_adrs_view(app: &App, f: &mut Frame<'_>) {
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::raw(": Details"),
+        Span::raw(": Actions"),
     ];
 
     let help_paragraph = Paragraph::new(TextLine::from(help_text))

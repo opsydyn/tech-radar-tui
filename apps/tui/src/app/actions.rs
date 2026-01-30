@@ -85,6 +85,13 @@ impl AppActions {
             .map_err(Into::into)
     }
 
+    pub async fn update_adr(&self, params: &crate::db::queries::AdrUpdateParams) -> Result<()> {
+        let pool = self.pool()?;
+        crate::db::queries::update_adr(pool, params)
+            .await
+            .map_err(Into::into)
+    }
+
     pub async fn blip_exists_by_name(&self, name: &str) -> Result<bool> {
         let pool = self.pool()?;
         crate::db::queries::blip_exists_by_name(pool, name)

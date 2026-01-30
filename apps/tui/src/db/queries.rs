@@ -9,7 +9,7 @@ use sqlx::query_scalar;
 #[allow(dead_code)]
 pub async fn get_adrs(pool: &SqlitePool) -> Result<Vec<AdrRecord>, sqlx::Error> {
     let adrs = query_as::<_, AdrRecord>(
-        "SELECT id, title, blip_name, timestamp FROM adr_log ORDER BY id DESC",
+        "SELECT id, title, blip_name, status, timestamp FROM adr_log ORDER BY id DESC",
     )
     .fetch_all(pool)
     .await?;
@@ -23,7 +23,7 @@ pub async fn get_adrs_by_blip_name(
     blip_name: &str,
 ) -> Result<Vec<AdrRecord>, sqlx::Error> {
     let adrs = query_as::<_, AdrRecord>(
-        "SELECT id, title, blip_name, timestamp FROM adr_log WHERE blip_name = ? ORDER BY id DESC",
+        "SELECT id, title, blip_name, status, timestamp FROM adr_log WHERE blip_name = ? ORDER BY id DESC",
     )
     .bind(blip_name)
     .fetch_all(pool)
@@ -151,6 +151,52 @@ pub async fn get_blip_by_id(pool: &SqlitePool, id: i32) -> Result<BlipRecord, sq
     .await?;
 
     Ok(blip)
+}
+
+/// Parameters for updating an ADR
+#[derive(Debug, Clone)]
+pub struct AdrUpdateParams {
+    pub id: i32,
+    pub title: Option<String>,
+    pub blip_name: Option<String>,
+    pub status: Option<String>,
+    pub created: Option<String>,
+}
+
+#[allow(dead_code)]
+impl AdrUpdateParams {
+    pub const fn has_status(&self) -> bool {
+        self.status.is_some()
+    }
+}
+
+/// Updates an ADR record in the database with the provided parameters
+/// Only fields that are Some will be updated, None fields will keep their current values
+pub async fn update_adr(pool: &SqlitePool, params: &AdrUpdateParams) -> Result<(), sqlx::Error> {
+    let current = query_as::<_, AdrRecord>(
+        "SELECT id, title, blip_name, status, timestamp FROM adr_log WHERE id = ?",
+    )
+    .bind(params.id)
+    .fetch_one(pool)
+    .await?;
+
+    query(
+        "UPDATE adr_log
+         SET title = ?,
+             blip_name = ?,
+             status = ?,
+             timestamp = ?
+         WHERE id = ?",
+    )
+    .bind(params.title.as_deref().unwrap_or(&current.title))
+    .bind(params.blip_name.as_deref().unwrap_or(&current.blip_name))
+    .bind(params.status.as_deref().unwrap_or(&current.status))
+    .bind(params.created.as_deref().unwrap_or(&current.timestamp))
+    .bind(params.id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }
 
 /// Parameters for updating a Blip

@@ -395,13 +395,6 @@ fn adr_status_selection_lines(selection_index: usize) -> Vec<TextLine<'static>> 
             format!("{prefix} {}", status.label()),
             style,
         )));
-
-        if is_selected {
-            lines.push(TextLine::from(Span::styled(
-                format!("   {}", status.as_str()),
-                Style::default().fg(Color::DarkGray),
-            )));
-        }
     }
 
     lines
@@ -431,13 +424,6 @@ fn quadrant_selection_lines(selection_index: usize) -> Vec<TextLine<'static>> {
             format!("{prefix} {}", quadrant.label()),
             style,
         )));
-
-        if is_selected {
-            lines.push(TextLine::from(Span::styled(
-                format!("   {}", quadrant.as_str()),
-                Style::default().fg(Color::DarkGray),
-            )));
-        }
     }
 
     lines
@@ -462,13 +448,6 @@ fn ring_selection_lines(selection_index: usize) -> Vec<TextLine<'static>> {
             format!("{prefix} {}", ring.label()),
             style,
         )));
-
-        if is_selected {
-            lines.push(TextLine::from(Span::styled(
-                format!("   {}", ring.as_str()),
-                Style::default().fg(Color::DarkGray),
-            )));
-        }
     }
 
     lines
@@ -489,7 +468,7 @@ fn info_line(
 fn shortcuts_line() -> TextLine<'static> {
     TextLine::from(vec![
         Span::styled(
-            "F1",
+            "?",
             Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
@@ -585,7 +564,7 @@ fn render_help(f: &mut Frame<'_>, area: Rect) {
             Style::default().add_modifier(Modifier::BOLD),
         )]),
         TextLine::from(vec![
-            Span::styled("  F1", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled("  ?", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
             Span::styled(" - Toggle this help screen", Style::default()),
         ]),
         TextLine::from(vec![

@@ -1,0 +1,1 @@
+ALTER TABLE adr_log ADD COLUMN status TEXT NOT NULL DEFAULT 'proposed';

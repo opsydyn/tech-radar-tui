@@ -18,10 +18,10 @@ pub fn handle_view_adrs_input(app: &mut App, key: KeyCode) {
             }
         }
         KeyCode::Enter => {
-            if let Some(adr) = app.adrs.get(app.selected_adr_index) {
-                app.status_message = format!("ADR: {} | Blip: {}", adr.title, adr.blip_name);
+            if !app.adrs.is_empty() {
+                app.adr_action_index = 0;
+                app.screen = AppScreen::AdrActions;
             }
-            app.screen = AppScreen::Main;
         }
         _ => {}
     }
