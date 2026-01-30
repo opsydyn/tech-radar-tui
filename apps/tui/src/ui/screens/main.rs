@@ -555,13 +555,40 @@ fn render_help_popup(_app: &App, f: &mut Frame<'_>, area: Rect) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow));
 
-    let help_text = vec![
+    let help_text = build_help_lines();
+
+    let help_paragraph = Paragraph::new(Text::from(help_text))
+        .block(help_block)
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(help_paragraph, popup_area);
+
+    let hint = Paragraph::new(Text::from(TextLine::from(vec![Span::styled(
+        "Press ? or Esc to close",
+        Style::default().fg(Color::Gray),
+    )])))
+    .alignment(Alignment::Center);
+
+    let hint_area = Rect {
+        x: popup_area.x,
+        y: popup_area.y + popup_area.height.saturating_sub(2),
+        width: popup_area.width,
+        height: 1,
+    };
+
+    f.render_widget(hint, hint_area);
+}
+
+fn build_help_lines() -> Vec<TextLine<'static>> {
+    let mut lines = vec![
         TextLine::from(vec![Span::styled(
             "Tech Radar ADR Generator",
             Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
         )]),
         TextLine::from(""),
-        TextLine::from("This tool helps you create Architectural Decision Records (ADRs) and Blips for your Tech Radar."),
+        TextLine::from(
+            "This tool helps you create Architectural Decision Records (ADRs) and Blips for your Tech Radar.",
+        ),
         TextLine::from(""),
         TextLine::from(vec![Span::styled(
             "Keyboard Shortcuts:",
@@ -569,10 +596,13 @@ fn render_help_popup(_app: &App, f: &mut Frame<'_>, area: Rect) {
         )]),
         TextLine::from(vec![
             Span::styled("  ?", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::styled(" - Toggle this help screen", Style::default()),
+            Span::styled(" - Toggle this help popup", Style::default()),
         ]),
         TextLine::from(vec![
-            Span::styled("  Space", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "  Space",
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" - Pause/resume animations", Style::default()),
         ]),
         TextLine::from(vec![
@@ -580,7 +610,10 @@ fn render_help_popup(_app: &App, f: &mut Frame<'_>, area: Rect) {
             Span::styled(" - Cancel current input / Go back", Style::default()),
         ]),
         TextLine::from(vec![
-            Span::styled("  Enter", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "  Enter",
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" - Confirm input", Style::default()),
         ]),
         TextLine::from(vec![
@@ -614,45 +647,27 @@ fn render_help_popup(_app: &App, f: &mut Frame<'_>, area: Rect) {
             Style::default().add_modifier(Modifier::BOLD),
         )]),
         TextLine::from("  1 - Hold: Technologies we've used but are actively moving away from"),
-        TextLine::from("  2 - Assess: Worth exploring with the goal of understanding how it affects us"),
-        TextLine::from("  3 - Trial: Worth pursuing, important to understand how to build up this capability"),
+        TextLine::from(
+            "  2 - Assess: Worth exploring with the goal of understanding how it affects us",
+        ),
+        TextLine::from(
+            "  3 - Trial: Worth pursuing, important to understand how to build up this capability",
+        ),
         TextLine::from("  4 - Adopt: We feel strongly that the industry should be adopting these items"),
-        TextLine::from(""),
         TextLine::from(""),
         TextLine::from(vec![Span::styled(
             "CLI Options:",
             Style::default().add_modifier(Modifier::BOLD),
         )]),
-        TextLine::from("  --headless       Print stats and exit"),
-        TextLine::from("  --headless --json Print stats as JSON"),
-        TextLine::from("  --db <path>       Override database path"),
-        TextLine::from("  --adr-dir <path>  Override ADR output directory"),
-        TextLine::from("  --blip-dir <path> Override Blip output directory"),
-        TextLine::from(""),
-        TextLine::from(vec![Span::styled(
-            "Press ? or Esc to close",
-            Style::default().fg(Color::Yellow),
-        )]),
     ];
 
-    let help_paragraph = Paragraph::new(Text::from(help_text))
-        .block(help_block)
-        .wrap(Wrap { trim: true });
+    let help_text = crate::cli::CliArgs::help_text();
+    for line in help_text.lines() {
+        if line.starts_with("Usage") || line.starts_with("Options") || line.trim().is_empty() {
+            continue;
+        }
+        lines.push(TextLine::from(line.to_string()));
+    }
 
-    f.render_widget(help_paragraph, popup_area);
-
-    let hint = Paragraph::new(Text::from(TextLine::from(vec![Span::styled(
-        "Press ? or Esc to close",
-        Style::default().fg(Color::Gray),
-    )])))
-    .alignment(Alignment::Center);
-
-    let hint_area = Rect {
-        x: popup_area.x,
-        y: popup_area.y + popup_area.height.saturating_sub(2),
-        width: popup_area.width,
-        height: 1,
-    };
-
-    f.render_widget(hint, hint_area);
+    lines
 }

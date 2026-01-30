@@ -164,11 +164,11 @@ impl TryFrom<(FileGenState, &FileGenEvent, &mut App)> for NextState {
 }
 
 /// Run the application in headless mode (no UI)
-pub async fn run_headless(app: &mut App) -> Result<()> {
+pub async fn run_headless(app: &mut App, json: bool) -> Result<()> {
     // Initialize database
     app.initialize_db().await?;
 
-    if std::env::args().any(|arg| arg == "--json") {
+    if json {
         render_headless_json(app).await?;
     } else {
         render_headless_stats(app).await?;
@@ -211,65 +211,9 @@ async fn render_headless_stats(app: &App) -> Result<()> {
 }
 
 async fn render_headless_json(app: &App) -> Result<()> {
-    use std::fmt::Write as _;
-
     let stats = build_headless_stats(app).await?;
-
-    let mut json = String::new();
-    json.push_str("{\n");
-
-    writeln!(&mut json, "  \"total_blips\": {},", stats.total_blips)?;
-    writeln!(&mut json, "  \"total_adrs\": {},", stats.total_adrs)?;
-
-    if let Some(coverage) = stats.adr_coverage {
-        writeln!(&mut json, "  \"adr_coverage\": {coverage:.1},")?;
-    } else {
-        json.push_str("  \"adr_coverage\": null,\n");
-    }
-
-    json.push_str("  \"by_quadrant\": {");
-    for (index, (quadrant, count)) in stats.by_quadrant.iter().enumerate() {
-        let suffix = if index + 1 == stats.by_quadrant.len() {
-            ""
-        } else {
-            ","
-        };
-        writeln!(&mut json, "\n    \"{quadrant}\": {count}{suffix}")?;
-    }
-    json.push_str("\n  },\n");
-
-    json.push_str("  \"by_ring\": {");
-    for (index, (ring, count)) in stats.by_ring.iter().enumerate() {
-        let suffix = if index + 1 == stats.by_ring.len() {
-            ""
-        } else {
-            ","
-        };
-        writeln!(&mut json, "\n    \"{ring}\": {count}{suffix}")?;
-    }
-    json.push_str("\n  },\n");
-
-    json.push_str("  \"recent_blips\": [");
-    for (index, blip) in stats.recent_blips.iter().enumerate() {
-        let suffix = if index + 1 == stats.recent_blips.len() {
-            ""
-        } else {
-            ","
-        };
-        writeln!(
-            &mut json,
-            "\n    {{\"name\": \"{}\", \"quadrant\": \"{}\", \"ring\": \"{}\", \"created\": \"{}\"}}{suffix}",
-            escape_json(&blip.name),
-            escape_json(&blip.quadrant),
-            escape_json(&blip.ring),
-            escape_json(&blip.created),
-        )?;
-    }
-    json.push_str("\n  ]\n");
-    json.push_str("}\n");
-
+    let json = serde_json::to_string_pretty(&stats)?;
     println!("{json}");
-
     Ok(())
 }
 
@@ -326,6 +270,7 @@ async fn build_headless_stats(app: &App) -> Result<HeadlessStats> {
     })
 }
 
+#[derive(serde::Serialize)]
 struct HeadlessStats {
     total_blips: i64,
     total_adrs: i64,
@@ -335,18 +280,12 @@ struct HeadlessStats {
     recent_blips: Vec<HeadlessBlip>,
 }
 
+#[derive(serde::Serialize)]
 struct HeadlessBlip {
     name: String,
     quadrant: String,
     ring: String,
     created: String,
-}
-
-fn escape_json(value: &str) -> String {
-    value
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
 }
 
 /// Run the main application event loop

@@ -60,6 +60,15 @@ JSON output (LLM-friendly):
 cargo run --release --manifest-path apps/tui/Cargo.toml --bin ratatui_adr-gen -- --headless --json
 ```
 
+## Flags
+
+- `--headless`: Print stats and exit
+- `--json`: Print headless stats as JSON
+- `--db <path>`: Override database path
+- `--adr-dir <path>`: Override ADR output directory
+- `--blip-dir <path>`: Override Blip output directory
+- `--debug`: Enable debug logging
+
 ## CLI options
 
 ```bash
@@ -67,6 +76,7 @@ ratatui_adr-gen --headless
 ratatui_adr-gen --headless --json
 ratatui_adr-gen --db /path/to/adrs.db
 ratatui_adr-gen --adr-dir ./adrs --blip-dir ./blips
+ratatui_adr-gen --debug
 ```
 
 ## Install

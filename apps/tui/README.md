@@ -100,6 +100,7 @@ ratatui_adr-gen --headless
 ratatui_adr-gen --headless --json
 ratatui_adr-gen --db /path/to/adrs.db
 ratatui_adr-gen --adr-dir ./adrs --blip-dir ./blips
+ratatui_adr-gen --debug
 ```
 
 ---

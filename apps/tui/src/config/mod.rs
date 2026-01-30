@@ -47,11 +47,11 @@ pub fn init_app_config() -> color_eyre::eyre::Result<(String, String)> {
 
     let database_url = if database_path.is_absolute() {
         // Absolute path needs exactly 3 slashes total (sqlite:///)
-        eprintln!("Using absolute database path: {path_str}");
+        log_db(&format!("Using absolute database path: {path_str}"));
         format!("sqlite:///{clean_path}")
     } else {
         // Relative path needs exactly 2 slashes total (sqlite://)
-        eprintln!("Using relative database path: {path_str}");
+        log_db(&format!("Using relative database path: {path_str}"));
         format!("sqlite://{clean_path}")
     };
     // Get author name from git config
@@ -84,4 +84,10 @@ pub fn get_adrs_dir() -> PathBuf {
 #[allow(dead_code)]
 pub fn get_blips_dir() -> PathBuf {
     env::var("BLIP_DIR").map_or_else(|_| PathBuf::from("./blips"), PathBuf::from)
+}
+
+fn log_db(message: &str) {
+    if env::var("DEBUG").as_deref() == Ok("1") {
+        eprintln!("{message}");
+    }
 }

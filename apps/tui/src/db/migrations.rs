@@ -5,6 +5,12 @@ use sqlx::{
     migrate::MigrateDatabase, query, query_scalar, sqlite::SqlitePoolOptions, Sqlite, SqlitePool,
 };
 
+fn log_db(message: &str) {
+    if std::env::var("DEBUG").as_deref() == Ok("1") {
+        eprintln!("{message}");
+    }
+}
+
 /// Sets up the database by creating the necessary tables if they don't exist
 pub async fn setup_database(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     // Create the adr_log table
@@ -90,32 +96,34 @@ pub async fn create_database_pool() -> Result<SqlitePool> {
     // Get database URL from config
     let (database_url, _) = init_app_config()?;
 
-    eprintln!("Initializing database with URL: {database_url}");
+    log_db(&format!("Initializing database with URL: {database_url}"));
 
     // Extract the database path from the URL for permission checks
     let db_path = match extract_db_path_from_url(&database_url) {
         Ok(path) => path,
         Err(e) => {
-            eprintln!("Error extracting database path: {e}");
+            log_db(&format!("Error extracting database path: {e}"));
             return Err(color_eyre::eyre::eyre!("Invalid database URL format: {e}"));
         }
     };
-    eprintln!("Extracted database path: {db_path}");
+    log_db(&format!("Extracted database path: {db_path}"));
     // Add extra debug print for clarity
-    println!("[DEBUG] Will connect to SQLite DB at: {db_path} (from URL: {database_url})");
+    log_db(&format!(
+        "Will connect to SQLite DB at: {db_path} (from URL: {database_url})"
+    ));
     // Check if parent directory exists and is writable
     if let Some(parent) = std::path::Path::new(&db_path).parent() {
         if !parent.exists() {
-            eprintln!("Creating parent directory: {}", parent.display());
+            log_db(&format!("Creating parent directory: {}", parent.display()));
             std::fs::create_dir_all(parent).map_err(|e| {
-                eprintln!("Failed to create directory: {e}");
+                log_db(&format!("Failed to create directory: {e}"));
                 color_eyre::eyre::eyre!("Failed to create database directory: {e}")
             })?;
         }
 
         // Check if directory is writable
         let metadata = parent.metadata().map_err(|e| {
-            eprintln!("Failed to get directory metadata: {e}");
+            log_db(&format!("Failed to get directory metadata: {e}"));
             color_eyre::eyre::eyre!("Failed to access directory metadata: {e}")
         })?;
 
@@ -123,7 +131,7 @@ pub async fn create_database_pool() -> Result<SqlitePool> {
         {
             use std::os::unix::fs::PermissionsExt;
             let mode = metadata.permissions().mode();
-            eprintln!("Directory permissions: {mode:o}");
+            log_db(&format!("Directory permissions: {mode:o}"));
             if mode & 0o200 == 0 {
                 return Err(color_eyre::eyre::eyre!(
                     "Database directory is not writable"
@@ -134,20 +142,20 @@ pub async fn create_database_pool() -> Result<SqlitePool> {
 
     // Create the database if it doesn't exist
     // Validate database path and permissions
-    eprintln!("Validating database path...");
+    log_db("Validating database path...");
     let db_file = std::path::Path::new(&db_path);
 
     // If database exists, check if it's readable/writable
     if db_file.exists() {
-        eprintln!("Database file exists, checking permissions");
+        log_db("Database file exists, checking permissions");
         match std::fs::OpenOptions::new()
             .read(true)
             .write(true)
             .open(db_file)
         {
-            Ok(_) => eprintln!("Database file is readable and writable"),
+            Ok(_) => log_db("Database file is readable and writable"),
             Err(e) => {
-                eprintln!("Database file permission error: {e}");
+                log_db(&format!("Database file permission error: {e}"));
                 return Err(color_eyre::eyre::eyre!(
                     "Database file permission error: {e}"
                 ));
@@ -156,26 +164,26 @@ pub async fn create_database_pool() -> Result<SqlitePool> {
     }
 
     // Create the database if it doesn't exist
-    eprintln!("Checking if database exists in SQLx...");
+    log_db("Checking if database exists in SQLx...");
     let db_exists = match Sqlite::database_exists(&database_url).await {
         Ok(exists) => exists,
         Err(e) => {
-            eprintln!("Error checking if database exists: {e}");
+            log_db(&format!("Error checking if database exists: {e}"));
             return Err(color_eyre::eyre::eyre!("Error checking database: {e}"));
         }
     };
 
     if db_exists {
-        eprintln!("Database already exists in SQLx");
+        log_db("Database already exists in SQLx");
     } else {
-        eprintln!("Database does not exist, creating it now");
+        log_db("Database does not exist, creating it now");
         Sqlite::create_database(&database_url).await.map_err(|e| {
-            eprintln!("Failed to create database: {e}");
+            log_db(&format!("Failed to create database: {e}"));
             color_eyre::eyre::eyre!("Failed to create SQLite database: {e}")
         })?;
     }
     // Create a connection pool with SQLite-specific options
-    eprintln!("Creating connection pool with improved settings");
+    log_db("Creating connection pool with improved settings");
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
         // Add SQLite connection options for better reliability
@@ -194,20 +202,20 @@ pub async fn create_database_pool() -> Result<SqlitePool> {
         .connect(&database_url)
         .await
         .map_err(|e| {
-            eprintln!("Failed to connect to database: {e}");
+            log_db(&format!("Failed to connect to database: {e}"));
             color_eyre::eyre::eyre!("Failed to connect to SQLite database: {e}")
         })?;
 
-    eprintln!("Connection pool created successfully");
+    log_db("Connection pool created successfully");
 
     // Set up the database schema
-    eprintln!("Setting up database schema");
+    log_db("Setting up database schema");
     setup_database(&pool).await.map_err(|e| {
-        eprintln!("Failed to set up database schema: {e}");
+        log_db(&format!("Failed to set up database schema: {e}"));
         color_eyre::eyre::eyre!("Failed to set up database schema: {e}")
     })?;
 
-    eprintln!("Database initialization completed successfully");
+    log_db("Database initialization completed successfully");
     Ok(pool)
 }
 
