@@ -1,5 +1,6 @@
 use crate::app::{AdrStatus, App, InputMode, InputState};
 use crate::ui::widgets::charts::{render_chart_panel, render_chart_tabs};
+use crate::ui::widgets::popup::{centered_rect, ClearWidget};
 use crate::ui::widgets::radar::{render_full_radar, render_mini_radar, render_radar};
 use crate::{Quadrant, Ring};
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Margin, Rect};
@@ -12,7 +13,7 @@ pub fn render_main(app: &App, f: &mut Frame<'_>) {
     let main_layout = build_main_layout(app, f);
 
     if app.show_help {
-        render_help(f, main_layout[0]);
+        render_help_popup(app, f, main_layout[0]);
         return;
     }
 
@@ -540,7 +541,10 @@ fn shortcuts_line() -> TextLine<'static> {
     ])
 }
 
-fn render_help(f: &mut Frame<'_>, area: Rect) {
+fn render_help_popup(_app: &App, f: &mut Frame<'_>, area: Rect) {
+    let popup_area = centered_rect(80, 80, area);
+    f.render_widget(ClearWidget, popup_area);
+
     let help_block = Block::default()
         .title("== Help & Keyboard Shortcuts ==")
         .title_style(
@@ -614,8 +618,19 @@ fn render_help(f: &mut Frame<'_>, area: Rect) {
         TextLine::from("  3 - Trial: Worth pursuing, important to understand how to build up this capability"),
         TextLine::from("  4 - Adopt: We feel strongly that the industry should be adopting these items"),
         TextLine::from(""),
+        TextLine::from(""),
         TextLine::from(vec![Span::styled(
-            "Press Esc to close this help screen",
+            "CLI Options:",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
+        TextLine::from("  --headless       Print stats and exit"),
+        TextLine::from("  --headless --json Print stats as JSON"),
+        TextLine::from("  --db <path>       Override database path"),
+        TextLine::from("  --adr-dir <path>  Override ADR output directory"),
+        TextLine::from("  --blip-dir <path> Override Blip output directory"),
+        TextLine::from(""),
+        TextLine::from(vec![Span::styled(
+            "Press ? or Esc to close",
             Style::default().fg(Color::Yellow),
         )]),
     ];
@@ -624,5 +639,20 @@ fn render_help(f: &mut Frame<'_>, area: Rect) {
         .block(help_block)
         .wrap(Wrap { trim: true });
 
-    f.render_widget(help_paragraph, area);
+    f.render_widget(help_paragraph, popup_area);
+
+    let hint = Paragraph::new(Text::from(TextLine::from(vec![Span::styled(
+        "Press ? or Esc to close",
+        Style::default().fg(Color::Gray),
+    )])))
+    .alignment(Alignment::Center);
+
+    let hint_area = Rect {
+        x: popup_area.x,
+        y: popup_area.y + popup_area.height.saturating_sub(2),
+        width: popup_area.width,
+        height: 1,
+    };
+
+    f.render_widget(hint, hint_area);
 }

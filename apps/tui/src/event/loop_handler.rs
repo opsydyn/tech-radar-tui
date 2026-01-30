@@ -168,55 +168,185 @@ pub async fn run_headless(app: &mut App) -> Result<()> {
     // Initialize database
     app.initialize_db().await?;
 
-    render_headless_stats(app).await?;
+    if std::env::args().any(|arg| arg == "--json") {
+        render_headless_json(app).await?;
+    } else {
+        render_headless_stats(app).await?;
+    }
 
     Ok(())
 }
 
 async fn render_headless_stats(app: &App) -> Result<()> {
+    let stats = build_headless_stats(app).await?;
+
+    println!("\nTech Radar Stats");
+    println!("=================");
+    println!("Total blips: {}", stats.total_blips);
+    println!("Total ADRs: {}", stats.total_adrs);
+
+    if let Some(coverage) = stats.adr_coverage {
+        println!("ADR coverage: {coverage:.1}%");
+    }
+
+    println!("\nBlips by Quadrant:");
+    for (quadrant, count) in stats.by_quadrant {
+        println!("- {quadrant}: {count}");
+    }
+
+    println!("\nBlips by Ring:");
+    for (ring, count) in stats.by_ring {
+        println!("- {ring}: {count}");
+    }
+
+    println!("\nRecent Blips:");
+    for blip in stats.recent_blips {
+        println!(
+            "- {} | {} | {} | {}",
+            blip.name, blip.quadrant, blip.ring, blip.created
+        );
+    }
+
+    Ok(())
+}
+
+async fn render_headless_json(app: &App) -> Result<()> {
+    use std::fmt::Write as _;
+
+    let stats = build_headless_stats(app).await?;
+
+    let mut json = String::new();
+    json.push_str("{\n");
+
+    writeln!(&mut json, "  \"total_blips\": {},", stats.total_blips)?;
+    writeln!(&mut json, "  \"total_adrs\": {},", stats.total_adrs)?;
+
+    if let Some(coverage) = stats.adr_coverage {
+        writeln!(&mut json, "  \"adr_coverage\": {coverage:.1},")?;
+    } else {
+        json.push_str("  \"adr_coverage\": null,\n");
+    }
+
+    json.push_str("  \"by_quadrant\": {");
+    for (index, (quadrant, count)) in stats.by_quadrant.iter().enumerate() {
+        let suffix = if index + 1 == stats.by_quadrant.len() {
+            ""
+        } else {
+            ","
+        };
+        writeln!(&mut json, "\n    \"{quadrant}\": {count}{suffix}")?;
+    }
+    json.push_str("\n  },\n");
+
+    json.push_str("  \"by_ring\": {");
+    for (index, (ring, count)) in stats.by_ring.iter().enumerate() {
+        let suffix = if index + 1 == stats.by_ring.len() {
+            ""
+        } else {
+            ","
+        };
+        writeln!(&mut json, "\n    \"{ring}\": {count}{suffix}")?;
+    }
+    json.push_str("\n  },\n");
+
+    json.push_str("  \"recent_blips\": [");
+    for (index, blip) in stats.recent_blips.iter().enumerate() {
+        let suffix = if index + 1 == stats.recent_blips.len() {
+            ""
+        } else {
+            ","
+        };
+        writeln!(
+            &mut json,
+            "\n    {{\"name\": \"{}\", \"quadrant\": \"{}\", \"ring\": \"{}\", \"created\": \"{}\"}}{suffix}",
+            escape_json(&blip.name),
+            escape_json(&blip.quadrant),
+            escape_json(&blip.ring),
+            escape_json(&blip.created),
+        )?;
+    }
+    json.push_str("\n  ]\n");
+    json.push_str("}\n");
+
+    println!("{json}");
+
+    Ok(())
+}
+
+async fn build_headless_stats(app: &App) -> Result<HeadlessStats> {
     let total_blips = app.actions.count_blips().await?;
     let total_adrs = app.actions.count_adrs().await?;
     let by_quadrant = app.actions.count_blips_by_quadrant().await?;
     let by_ring = app.actions.count_blips_by_ring().await?;
     let recent = app.actions.recent_blips(5).await?;
 
-    println!("\nTech Radar Stats");
-    println!("=================");
-    println!("Total blips: {total_blips}");
-    println!("Total ADRs: {total_adrs}");
-
-    if total_blips > 0 {
+    let adr_coverage = if total_blips > 0 {
         #[allow(clippy::cast_precision_loss)]
-        let coverage = (total_adrs as f64 / total_blips as f64) * 100.0;
-        println!("ADR coverage: {coverage:.1}%");
-    }
+        Some((total_adrs as f64 / total_blips as f64) * 100.0)
+    } else {
+        None
+    };
 
-    println!("\nBlips by Quadrant:");
-    for (quadrant, count) in by_quadrant {
-        println!("- {}: {count}", quadrant.as_str());
-    }
+    let by_quadrant = by_quadrant
+        .into_iter()
+        .map(|(quadrant, count)| (quadrant.as_str().to_string(), count))
+        .collect();
 
-    println!("\nBlips by Ring:");
-    for (ring, count) in by_ring {
-        println!("- {}: {count}", ring.as_str());
-    }
+    let by_ring = by_ring
+        .into_iter()
+        .map(|(ring, count)| (ring.as_str().to_string(), count))
+        .collect();
 
-    println!("\nRecent Blips:");
-    for blip in recent {
-        let ring = blip
-            .ring
-            .map_or_else(|| "(none)".to_string(), |ring| ring.as_str().to_string());
-        let quadrant = blip.quadrant.map_or_else(
-            || "(none)".to_string(),
-            |quadrant| quadrant.as_str().to_string(),
-        );
-        println!(
-            "- {} | {} | {} | {}",
-            blip.name, quadrant, ring, blip.created
-        );
-    }
+    let recent_blips = recent
+        .into_iter()
+        .map(|blip| {
+            let ring = blip
+                .ring
+                .map_or_else(|| "(none)".to_string(), |ring| ring.as_str().to_string());
+            let quadrant = blip.quadrant.map_or_else(
+                || "(none)".to_string(),
+                |quadrant| quadrant.as_str().to_string(),
+            );
+            HeadlessBlip {
+                name: blip.name,
+                quadrant,
+                ring,
+                created: blip.created,
+            }
+        })
+        .collect();
 
-    Ok(())
+    Ok(HeadlessStats {
+        total_blips,
+        total_adrs,
+        adr_coverage,
+        by_quadrant,
+        by_ring,
+        recent_blips,
+    })
+}
+
+struct HeadlessStats {
+    total_blips: i64,
+    total_adrs: i64,
+    adr_coverage: Option<f64>,
+    by_quadrant: Vec<(String, i64)>,
+    by_ring: Vec<(String, i64)>,
+    recent_blips: Vec<HeadlessBlip>,
+}
+
+struct HeadlessBlip {
+    name: String,
+    quadrant: String,
+    ring: String,
+    created: String,
+}
+
+fn escape_json(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
 }
 
 /// Run the main application event loop
@@ -241,7 +371,6 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
             event::poll(std::time::Duration::from_millis(EVENT_POLL_TIMEOUT)),
             Ok(true)
         ) {
-            // Event is available
             match event::read() {
                 Ok(Event::Key(key)) => {
                     handle_input(app, key.code).await;
@@ -260,8 +389,6 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
                     // Ignore non-key events for now
                 }
             }
-        } else {
-            // No event available, continue with application logic
         }
 
         // Handle file generation with state machine

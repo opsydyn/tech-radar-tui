@@ -1,7 +1,7 @@
 use crate::app::state::EditField;
 use crate::app::App;
 use crate::ui::widgets::popup::{centered_rect, ClearWidget};
-use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line as TextLine, Span, Text};
 use ratatui::widgets::{Block, Borders, Paragraph};
@@ -14,12 +14,8 @@ pub fn render_edit_blip(app: &App, f: &mut Frame<'_>) {
     if let (Some(selected_blip), Some(edit_state)) =
         (app.blips.get(app.selected_blip_index), &app.edit_blip_state)
     {
-        let form_area = Rect {
-            x: area.width.saturating_sub(60) / 2,
-            y: area.height.saturating_sub(15) / 2,
-            width: 60.min(area.width),
-            height: 15.min(area.height),
-        };
+        let form_area = centered_rect(70, 70, area);
+        f.render_widget(ClearWidget, form_area);
 
         let block = Block::default()
             .title(format!("Edit Blip: {}", selected_blip.name))

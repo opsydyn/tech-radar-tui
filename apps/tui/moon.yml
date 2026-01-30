@@ -67,6 +67,11 @@ tasks:
     command: 'cargo run --release --bin ratatui_adr-gen -- --headless'
     inputs:
       - '@globs(sources)'
+
+  headless-json:
+    command: 'cargo run --release --bin ratatui_adr-gen -- --headless --json'
+    inputs:
+      - '@globs(sources)'
     options:
       interactive: false
       outputStyle: 'stream'

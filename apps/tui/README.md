@@ -27,7 +27,7 @@ Built using [`ratatui`](https://github.com/ratatui-org/ratatui), [`crossterm`](h
 | `b`        | Start new Blip                             |
 | `Enter`    | Confirm input                              |
 | `Esc`      | Cancel or go back                          |
-| `F1`       | Toggle help screen                         |
+| `?` / `h`  | Toggle help popup                          |
 | `n`        | Start new entry (after completion)         |
 | `q`        | Quit                                       |
 
@@ -90,7 +90,16 @@ For Blips, the structure is slightly different and includes `quadrant` and `ring
 ## 🛠️ Run
 
 ```bash
-cargo run --release
+cargo run --release --bin ratatui_adr-gen
+```
+
+### CLI options
+
+```bash
+ratatui_adr-gen --headless
+ratatui_adr-gen --headless --json
+ratatui_adr-gen --db /path/to/adrs.db
+ratatui_adr-gen --adr-dir ./adrs --blip-dir ./blips
 ```
 
 ---
@@ -120,7 +129,7 @@ _Coming soon._
 
 ## 📜 License
 
-MIT or Apache 2.0 — your choice.
+MIT.
 
 ---
 

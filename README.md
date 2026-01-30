@@ -44,8 +44,29 @@ moon run tui:dev
 
 ## Headless stats
 
+Text output:
+
 ```bash
 moon run tui:headless
+```
+
+```bash
+cargo run --release --manifest-path apps/tui/Cargo.toml --bin ratatui_adr-gen -- --headless
+```
+
+JSON output (LLM-friendly):
+
+```bash
+cargo run --release --manifest-path apps/tui/Cargo.toml --bin ratatui_adr-gen -- --headless --json
+```
+
+## CLI options
+
+```bash
+ratatui_adr-gen --headless
+ratatui_adr-gen --headless --json
+ratatui_adr-gen --db /path/to/adrs.db
+ratatui_adr-gen --adr-dir ./adrs --blip-dir ./blips
 ```
 
 ## Install

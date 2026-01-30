@@ -1,4 +1,5 @@
 use crate::app::App;
+use crate::ui::widgets::popup::{centered_rect, ClearWidget};
 use ratatui::layout::{Alignment, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line as TextLine, Span};
@@ -9,12 +10,8 @@ pub fn render_blip_actions(app: &App, f: &mut Frame<'_>) {
     let area = f.area();
 
     if let Some(selected_blip) = app.blips.get(app.selected_blip_index) {
-        let action_area = Rect {
-            x: area.width.saturating_sub(50) / 2,
-            y: area.height.saturating_sub(10) / 2,
-            width: 50.min(area.width),
-            height: 10.min(area.height),
-        };
+        let action_area = centered_rect(60, 55, area);
+        f.render_widget(ClearWidget, action_area);
 
         let block = Block::default()
             .title(format!("Actions for Blip: {}", selected_blip.name))
@@ -85,9 +82,9 @@ pub fn render_blip_actions(app: &App, f: &mut Frame<'_>) {
         ];
 
         let help_area = Rect {
-            x: area.x,
-            y: area.height - 3,
-            width: area.width,
+            x: action_area.x,
+            y: action_area.y + action_area.height.saturating_sub(3),
+            width: action_area.width,
             height: 3,
         };
 
@@ -96,5 +93,20 @@ pub fn render_blip_actions(app: &App, f: &mut Frame<'_>) {
             .alignment(Alignment::Center);
 
         f.render_widget(help_paragraph, help_area);
+
+        let hint = Paragraph::new(TextLine::from(vec![Span::styled(
+            "Press Esc to close",
+            Style::default().fg(Color::Gray),
+        )]))
+        .alignment(Alignment::Center);
+
+        let hint_area = Rect {
+            x: action_area.x,
+            y: action_area.y + action_area.height.saturating_sub(2),
+            width: action_area.width,
+            height: 1,
+        };
+
+        f.render_widget(hint, hint_area);
     }
 }

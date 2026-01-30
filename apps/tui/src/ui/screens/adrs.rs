@@ -1,6 +1,7 @@
 use crate::app::App;
+use crate::ui::widgets::popup::{centered_rect, ClearWidget};
 use crate::ui::widgets::tables::scroll_offset;
-use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line as TextLine, Span};
 use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table};
@@ -19,16 +20,18 @@ fn adr_status_color(status: &str) -> Color {
 
 pub fn render_adrs_view(app: &App, f: &mut Frame<'_>) {
     let area = f.area();
+    let popup_area = centered_rect(90, 80, area);
+    f.render_widget(ClearWidget, popup_area);
 
     if app.adrs.is_empty() {
         let block = Block::default()
-            .title("ADR Log")
+            .title("ADR Table")
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Yellow));
         let paragraph = Paragraph::new("No ADRs found.")
             .block(block)
             .alignment(ratatui::layout::Alignment::Center);
-        f.render_widget(paragraph, area);
+        f.render_widget(paragraph, popup_area);
         return;
     }
 
@@ -100,7 +103,7 @@ pub fn render_adrs_view(app: &App, f: &mut Frame<'_>) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(5), Constraint::Length(3)])
-        .split(area);
+        .split(popup_area);
 
     f.render_widget(table, chunks[0]);
 
@@ -133,4 +136,19 @@ pub fn render_adrs_view(app: &App, f: &mut Frame<'_>) {
         .alignment(ratatui::layout::Alignment::Center);
 
     f.render_widget(help_paragraph, chunks[1]);
+
+    let hint = Paragraph::new(TextLine::from(vec![Span::styled(
+        "Press Esc to close",
+        Style::default().fg(Color::Gray),
+    )]))
+    .alignment(ratatui::layout::Alignment::Center);
+
+    let hint_area = Rect {
+        x: popup_area.x,
+        y: popup_area.y + popup_area.height.saturating_sub(2),
+        width: popup_area.width,
+        height: 1,
+    };
+
+    f.render_widget(hint, hint_area);
 }

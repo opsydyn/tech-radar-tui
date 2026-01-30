@@ -1,7 +1,7 @@
 use crate::app::input::screens::edit_adr::AdrEditField;
 use crate::app::state::App;
-
-use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
+use crate::ui::widgets::popup::{centered_rect, ClearWidget};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line as TextLine, Span, Text};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
@@ -13,12 +13,8 @@ pub fn render_edit_adr(app: &App, f: &mut Frame<'_>) {
     };
 
     let area = f.area();
-    let popup = Rect {
-        x: area.width.saturating_sub(60) / 2,
-        y: area.height.saturating_sub(12) / 2,
-        width: 60.min(area.width),
-        height: 12.min(area.height),
-    };
+    let popup = centered_rect(70, 60, area);
+    f.render_widget(ClearWidget, popup);
 
     let block = Block::default()
         .title("Edit ADR")
