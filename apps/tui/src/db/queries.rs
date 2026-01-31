@@ -253,6 +253,28 @@ pub async fn update_blip(pool: &SqlitePool, params: &BlipUpdateParams) -> Result
     Ok(())
 }
 
+pub async fn set_app_setting(pool: &SqlitePool, key: &str, value: &str) -> Result<(), sqlx::Error> {
+    query(
+        "INSERT INTO app_settings (key, value)
+         VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    )
+    .bind(key)
+    .bind(value)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn get_app_settings(pool: &SqlitePool) -> Result<Vec<(String, String)>, sqlx::Error> {
+    let rows = query_as::<_, (String, String)>("SELECT key, value FROM app_settings ORDER BY key")
+        .fetch_all(pool)
+        .await?;
+
+    Ok(rows)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -14,7 +14,7 @@ pub fn render_main(app: &App, f: &mut Frame<'_>) {
     let main_layout = build_main_layout(app, f);
 
     if app.show_help {
-        render_help_popup(app, f, main_layout[0]);
+        render_settings_popup(app, f, main_layout[0]);
         return;
     }
 
@@ -625,12 +625,12 @@ fn shortcuts_line() -> TextLine<'static> {
     ])
 }
 
-fn render_help_popup(_app: &App, f: &mut Frame<'_>, area: Rect) {
+fn render_settings_popup(app: &App, f: &mut Frame<'_>, area: Rect) {
     let popup_area = centered_rect(80, 80, area);
     f.render_widget(ClearWidget, popup_area);
 
-    let help_block = Block::default()
-        .title("== Help & Keyboard Shortcuts ==")
+    let settings_block = Block::default()
+        .title("== Settings & Help ==")
         .title_style(
             Style::default()
                 .fg(Color::Yellow)
@@ -639,16 +639,22 @@ fn render_help_popup(_app: &App, f: &mut Frame<'_>, area: Rect) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow));
 
+    let content_area = settings_block.inner(popup_area);
+    f.render_widget(settings_block, popup_area);
+
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+        .split(content_area);
+
+    render_settings_section(app, f, sections[0]);
+
     let help_text = build_help_lines();
-
-    let help_paragraph = Paragraph::new(Text::from(help_text))
-        .block(help_block)
-        .wrap(Wrap { trim: true });
-
-    f.render_widget(help_paragraph, popup_area);
+    let help_paragraph = Paragraph::new(Text::from(help_text)).wrap(Wrap { trim: true });
+    f.render_widget(help_paragraph, sections[1]);
 
     let hint = Paragraph::new(Text::from(TextLine::from(vec![Span::styled(
-        "Press ? or Esc to close",
+        "Press ? or Esc to close settings",
         Style::default().fg(Color::Gray),
     )])))
     .alignment(Alignment::Center);
@@ -661,6 +667,64 @@ fn render_help_popup(_app: &App, f: &mut Frame<'_>, area: Rect) {
     };
 
     f.render_widget(hint, hint_area);
+}
+
+fn render_settings_section(app: &App, f: &mut Frame<'_>, area: Rect) {
+    let settings_block = Block::default()
+        .title("Settings")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+
+    let inner = settings_block.inner(area);
+    f.render_widget(settings_block, area);
+
+    let entries = [
+        ("ADR_DIR", app.settings_adr_dir.as_str()),
+        ("BLIP_DIR", app.settings_blip_dir.as_str()),
+        ("DATABASE_NAME", app.settings_db_name.as_str()),
+    ];
+
+    let rows = entries
+        .iter()
+        .enumerate()
+        .map(|(index, (label, value))| {
+            let is_selected = app.settings_selection_index == index;
+            let is_editing = app.settings_editing && is_selected;
+            let display_value = if is_editing {
+                app.settings_input.as_str()
+            } else {
+                *value
+            };
+
+            let label_style = if is_selected {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(Color::Gray)
+            };
+
+            TextLine::from(vec![
+                Span::styled(format!("{label}: "), label_style),
+                Span::styled(display_value, Style::default().fg(Color::White)),
+            ])
+        })
+        .collect::<Vec<_>>();
+
+    let help = if app.settings_editing {
+        "Enter to save, Esc to cancel"
+    } else {
+        "Up/Down to select, Enter to edit (press ? to close)"
+    };
+
+    let footer = TextLine::from(vec![Span::styled(help, Style::default().fg(Color::Gray))]);
+
+    let mut content = rows;
+    content.push(TextLine::from(""));
+    content.push(footer);
+
+    let paragraph = Paragraph::new(Text::from(content)).wrap(Wrap { trim: true });
+    f.render_widget(paragraph, inner);
 }
 
 fn build_help_lines() -> Vec<TextLine<'static>> {
@@ -680,8 +744,35 @@ fn build_help_lines() -> Vec<TextLine<'static>> {
         )]),
         TextLine::from(vec![
             Span::styled("  ?", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::styled(" - Toggle this help popup", Style::default()),
+            Span::styled(" - Toggle settings panel", Style::default()),
         ]),
+        TextLine::from(vec![
+            Span::styled(
+                "  Space",
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" - Pause/resume animations", Style::default()),
+        ]),
+        TextLine::from(vec![
+            Span::styled("  Esc", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(" - Cancel current input / Go back", Style::default()),
+        ]),
+        TextLine::from(vec![
+            Span::styled(
+                "  Enter",
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(" - Confirm input", Style::default()),
+        ]),
+        TextLine::from(vec![
+            Span::styled("  a", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(" - Create ADR", Style::default()),
+        ]),
+        TextLine::from(vec![
+            Span::styled("  b", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(" - Create Blip", Style::default()),
+        ]),
+
         TextLine::from(vec![
             Span::styled(
                 "  Space",

@@ -4,13 +4,15 @@ use crossterm::event::KeyCode;
 pub fn handle_help_toggle(app: &mut App, key: KeyCode) -> bool {
     if matches!(key, KeyCode::Char('h' | '?')) {
         app.show_help = !app.show_help;
+        app.settings_editing = false;
+        app.settings_input.clear();
         return true;
     }
 
-    if app.show_help {
-        if key == KeyCode::Esc {
-            app.show_help = false;
-        }
+    if app.show_help && key == KeyCode::Esc {
+        app.show_help = false;
+        app.settings_editing = false;
+        app.settings_input.clear();
         return true;
     }
 

@@ -134,6 +134,20 @@ impl AppActions {
             .map_err(Into::into)
     }
 
+    pub async fn get_settings(&self) -> Result<Vec<(String, String)>> {
+        let pool = self.pool()?;
+        crate::db::queries::get_app_settings(pool)
+            .await
+            .map_err(Into::into)
+    }
+
+    pub async fn set_setting(&self, key: &str, value: &str) -> Result<()> {
+        let pool = self.pool()?;
+        crate::db::queries::set_app_setting(pool, key, value)
+            .await
+            .map_err(Into::into)
+    }
+
     fn pool(&self) -> Result<&SqlitePool> {
         self.db_pool
             .as_ref()

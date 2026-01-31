@@ -1664,14 +1664,11 @@ pub fn render_radar(
 
 pub fn render_help(f: &mut Frame<'_>, area: Rect) {
     let help_block = Block::default()
-        .title("== Help & Keyboard Shortcuts ==")
-        .title_style(
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        )
+        .title("== Settings & Help ==")
+        .title_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Yellow));
+
 
     let help_text = vec![
         TextLine::from(vec![
@@ -1684,9 +1681,10 @@ pub fn render_help(f: &mut Frame<'_>, area: Rect) {
             Span::styled("Keyboard Shortcuts:", Style::default().add_modifier(Modifier::BOLD)),
         ]),
         TextLine::from(vec![
-            Span::styled("  F1", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::styled(" - Toggle this help screen", Style::default()),
+            Span::styled("  ?", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(" - Toggle settings panel", Style::default()),
         ]),
+
         TextLine::from(vec![
             Span::styled("  Esc", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
             Span::styled(" - Cancel current input / Go back", Style::default()),

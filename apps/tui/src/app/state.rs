@@ -242,6 +242,12 @@ pub struct App {
     pub completion_fx: Mutex<Option<Effect>>,
     pub ring_pie_fx: Mutex<Option<Effect>>,
     pub ring_pie_area: Mutex<Option<Rect>>,
+    pub settings_selection_index: usize,
+    pub settings_editing: bool,
+    pub settings_input: String,
+    pub settings_blip_dir: String,
+    pub settings_adr_dir: String,
+    pub settings_db_name: String,
     pub screen: AppScreen,
     pub blips: Vec<crate::db::models::BlipRecord>,
     pub selected_blip_index: usize,
@@ -282,6 +288,12 @@ impl App {
             completion_fx: Mutex::new(None),
             ring_pie_fx: Mutex::new(None),
             ring_pie_area: Mutex::new(None),
+            settings_selection_index: 0,
+            settings_editing: false,
+            settings_input: String::new(),
+            settings_blip_dir: String::new(),
+            settings_adr_dir: String::new(),
+            settings_db_name: String::new(),
             screen: AppScreen::Main,
 
             blips: Vec::new(),
@@ -306,8 +318,52 @@ impl App {
 
     pub async fn initialize_db(&mut self) -> Result<()> {
         self.actions.initialize().await?;
+        self.load_settings_from_env();
+        self.load_settings_from_db().await;
         self.fetch_blips().await?;
         Ok(())
+    }
+
+    pub async fn load_settings_from_db(&mut self) {
+        let Ok(settings) = self.actions.get_settings().await else {
+            return;
+        };
+
+        for (key, value) in settings {
+            match key.as_str() {
+                "ADR_DIR" => self.settings_adr_dir = value,
+                "BLIP_DIR" => self.settings_blip_dir = value,
+                "DATABASE_NAME" => self.settings_db_name = value,
+                _ => {}
+            }
+        }
+
+        self.apply_settings_runtime();
+    }
+
+    pub fn apply_settings_runtime(&mut self) {
+        self.actions.adrs_dir = PathBuf::from(&self.settings_adr_dir);
+        self.actions.blips_dir = PathBuf::from(&self.settings_blip_dir);
+    }
+
+    pub async fn persist_settings(&self) -> Result<()> {
+        self.actions
+            .set_setting("ADR_DIR", &self.settings_adr_dir)
+            .await?;
+        self.actions
+            .set_setting("BLIP_DIR", &self.settings_blip_dir)
+            .await?;
+        self.actions
+            .set_setting("DATABASE_NAME", &self.settings_db_name)
+            .await?;
+        Ok(())
+    }
+
+    pub fn load_settings_from_env(&mut self) {
+        self.settings_adr_dir = crate::config::get_adrs_dir().to_string_lossy().to_string();
+        self.settings_blip_dir = crate::config::get_blips_dir().to_string_lossy().to_string();
+        self.settings_db_name =
+            std::env::var("DATABASE_NAME").unwrap_or_else(|_| "adrs.db".to_string());
     }
 
     pub fn update(&mut self) {
@@ -530,6 +586,9 @@ impl App {
         self.chart_tab_index = 0;
         self.last_checked_blip_name = None;
         self.last_blip_name_exists = false;
+        self.settings_selection_index = 0;
+        self.settings_editing = false;
+        self.settings_input.clear();
         self.selected_adr_index = 0;
         self.adrs.clear();
         self.adr_filter_name = None;
