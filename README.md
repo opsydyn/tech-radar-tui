@@ -15,6 +15,8 @@ Keyboard-driven terminal UI for creating Architectural Decision Records (ADRs) a
 
 ## Features
 
+![Tech Radar TUI](tech-radar.png)
+
 - Create ADRs and blips with structured front matter
 - Quadrant + ring selection with live radar placement
 - Charts and radar visualizations
