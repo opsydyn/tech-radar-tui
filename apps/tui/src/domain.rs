@@ -27,6 +27,16 @@ impl Quadrant {
         }
     }
 
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_lowercase().as_str() {
+            "platforms" => Some(Self::Platforms),
+            "languages" => Some(Self::Languages),
+            "tools" => Some(Self::Tools),
+            "techniques" => Some(Self::Techniques),
+            _ => None,
+        }
+    }
+
     pub const fn label(self) -> &'static str {
         match self {
             Self::Platforms => "Platforms",
@@ -62,6 +72,16 @@ impl Ring {
             1 => Some(Self::Assess),
             2 => Some(Self::Trial),
             3 => Some(Self::Adopt),
+            _ => None,
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_lowercase().as_str() {
+            "hold" => Some(Self::Hold),
+            "assess" => Some(Self::Assess),
+            "trial" => Some(Self::Trial),
+            "adopt" => Some(Self::Adopt),
             _ => None,
         }
     }

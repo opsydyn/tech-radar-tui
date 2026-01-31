@@ -29,7 +29,7 @@ pub fn render_edit_adr(app: &App, f: &mut Frame<'_>) {
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Length(1),
-            Constraint::Length(2),
+            Constraint::Length(3),
             Constraint::Length(1),
             Constraint::Length(2),
         ])

@@ -33,7 +33,7 @@ pub fn render_edit_blip(app: &App, f: &mut Frame<'_>) {
                 Constraint::Length(1), // Quadrant
                 Constraint::Length(1), // Tag
                 Constraint::Length(3), // Description
-                Constraint::Length(1), // Save
+                Constraint::Length(3), // Save
                 Constraint::Length(1), // Help text
             ])
             .split(form_area);

@@ -18,10 +18,13 @@ pub fn handle_adr_actions_input(app: &mut App, key: KeyCode) {
             }
             1 => {
                 if let Some(adr) = app.adrs.get(app.selected_adr_index) {
+                    let status = AdrStatus::parse(&adr.status)
+                        .unwrap_or(AdrStatus::Proposed);
                     app.edit_adr_state = Some(AdrEditState {
+                        id: adr.id,
                         field: AdrEditField::Title,
                         title: adr.title.clone(),
-                        status: app.adr_status.unwrap_or(AdrStatus::Proposed),
+                        status,
                         editing: false,
                     });
                     app.screen = AppScreen::EditAdr;

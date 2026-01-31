@@ -1,6 +1,6 @@
 use crate::app::actions::AppActions;
 use crate::db::models::{AdrMetadataParams, BlipMetadataParams, BlipRecord};
-use crate::db::queries::BlipUpdateParams;
+use crate::db::queries::{AdrUpdateParams, BlipUpdateParams};
 use crate::{Quadrant, Ring};
 use color_eyre::Result;
 use std::{
@@ -9,7 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::app::input::screens::edit_adr::AdrEditState;
+use crate::app::input::screens::edit_adr::{AdrEditField, AdrEditState};
 use crate::ui::screens::main::{CompletionBlip, CompletionStats};
 use ratatui::layout::Rect;
 use ratatui::style::Color;
@@ -128,6 +128,17 @@ impl AdrStatus {
         let index = statuses.iter().position(|item| *item == self).unwrap_or(0);
         statuses[(index + statuses.len() - 1) % statuses.len()]
     }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_lowercase().as_str() {
+            "proposed" => Some(Self::Proposed),
+            "accepted" => Some(Self::Accepted),
+            "rejected" => Some(Self::Rejected),
+            "deprecated" => Some(Self::Deprecated),
+            "superseded" => Some(Self::Superseded),
+            _ => None,
+        }
+    }
 }
 
 /// Represents which field is currently being edited in the EditBlip screen
@@ -178,12 +189,8 @@ impl EditBlipState {
             adr_id: blip.adr_id,
             field: EditField::Name,
             name: blip.name.clone(),
-            ring: blip
-                .ring
-                .map_or_else(String::new, |ring| ring.as_str().to_string()),
-            quadrant: blip
-                .quadrant
-                .map_or_else(String::new, |quadrant| quadrant.as_str().to_string()),
+            ring: Self::ring_options()[ring_index].to_string(),
+            quadrant: Self::quadrant_options()[quadrant_index].to_string(),
             tag: blip.tag.clone().unwrap_or_default(),
             description: blip.description.clone().unwrap_or_default(),
             editing: false,
@@ -818,10 +825,209 @@ impl App {
 
     /// Updates a blip in the database and refreshes the blips list
     pub async fn update_blip(&mut self, params: BlipUpdateParams) -> Result<()> {
+        let blip_id = params.id;
         self.actions.update_blip(&params).await?;
         self.fetch_blips().await?;
+        self.refresh_edit_blip_state(blip_id);
         self.status_message = "Blip updated successfully".to_string();
+        if let Err(e) = self.sync_blip_file(blip_id) {
+            self.status_message = format!("Blip saved to DB, but markdown sync failed: {e}");
+        }
         Ok(())
+    }
+
+    fn sync_blip_file(&self, blip_id: i32) -> Result<()> {
+        let Some(blip) = self.blips.iter().find(|item| item.id == blip_id) else {
+            return Ok(());
+        };
+
+        let ring = blip
+            .ring
+            .map_or_else(String::new, |ring| ring.as_str().to_string());
+        let quadrant = blip
+            .quadrant
+            .map_or_else(String::new, |quadrant| quadrant.as_str().to_string());
+        let sanitized_name = blip.name.replace(' ', "-").to_lowercase();
+        let date_prefix = blip.created.split('T').next().unwrap_or("None");
+        let file_name = format!("{date_prefix}-{sanitized_name}");
+        let mut file_path = get_file_path(&self.actions.blips_dir, &file_name);
+
+        if !file_path.exists() {
+            if let Ok(entries) = std::fs::read_dir(&self.actions.blips_dir) {
+                let suffix = format!("-{sanitized_name}.mdx");
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| name.ends_with(&suffix))
+                    {
+                        file_path = path;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if !file_path.exists() {
+            std::fs::create_dir_all(&self.actions.blips_dir)?;
+            file_path = get_file_path(&self.actions.blips_dir, &file_name);
+        }
+
+        let created = blip.created.clone();
+        let content = format!(
+            r#"---
+ id: "{}"
+ name: "{}"
+ ring: "{}"
+ quadrant: "{}"
+ tags: ["{}"]
+ authors: ["{}"]
+ hasAdr: {}
+ adrId: {}
+ description: {{{{description}}}}
+ created: "{}"
+ ---
+ 
+ # "{}"
+ **Ring**: "{}"
+ **Quadrant**: "{}"
+ **New**: false
+ **Description**: {{{{description}}}}
+ **has ADR**: {}
+ "#,
+            blip.id,
+            blip.name,
+            ring,
+            quadrant,
+            blip.tag.clone().unwrap_or_default(),
+            self.actions.author_name,
+            blip.has_adr,
+            blip.adr_id
+                .map_or_else(|| "null".to_string(), |id| id.to_string()),
+            created,
+            blip.name,
+            ring,
+            quadrant,
+            blip.has_adr,
+        );
+
+        std::fs::write(file_path, content)?;
+        Ok(())
+    }
+
+    fn refresh_edit_blip_state(&mut self, blip_id: i32) {
+        let Some(blip) = self.blips.iter().find(|item| item.id == blip_id) else {
+            return;
+        };
+
+        if let Some(edit_state) = &mut self.edit_blip_state {
+            *edit_state = EditBlipState::from_blip(blip);
+            edit_state.field = EditField::Save;
+        }
+    }
+
+    /// Updates an ADR in the database and refreshes the ADR list
+    pub async fn update_adr(&mut self, params: AdrUpdateParams) -> Result<()> {
+        let adr_id = params.id;
+        self.actions.update_adr(&params).await?;
+        let filter = self.adr_filter_name.clone().unwrap_or_default();
+        self.fetch_adrs_for_blip(&filter).await?;
+        self.refresh_edit_adr_state(adr_id);
+        self.status_message = "ADR updated successfully".to_string();
+        if let Err(e) = self.sync_adr_file(adr_id) {
+            self.status_message = format!("ADR saved to DB, but markdown sync failed: {e}");
+        }
+        Ok(())
+    }
+
+    fn sync_adr_file(&self, adr_id: i32) -> Result<()> {
+        let Some(adr) = self.adrs.iter().find(|item| item.id == adr_id) else {
+            return Ok(());
+        };
+
+        let status = AdrStatus::parse(&adr.status).unwrap_or(AdrStatus::Proposed);
+        let sanitized_name = adr.blip_name.replace(' ', "-").to_lowercase();
+        let date_prefix = adr.timestamp.split('T').next().unwrap_or("None");
+        let file_name = format!("{date_prefix}-{sanitized_name}");
+        let mut file_path = get_file_path(&self.actions.adrs_dir, &file_name);
+
+        if !file_path.exists() {
+            if let Ok(entries) = std::fs::read_dir(&self.actions.adrs_dir) {
+                let suffix = format!("-{sanitized_name}.mdx");
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| name.ends_with(&suffix))
+                    {
+                        file_path = path;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if !file_path.exists() {
+            std::fs::create_dir_all(&self.actions.adrs_dir)?;
+            file_path = get_file_path(&self.actions.adrs_dir, &file_name);
+        }
+
+        let blip = if adr.blip_name.is_empty() {
+            "null"
+        } else {
+            &adr.blip_name
+        };
+
+        let content = format!(
+            r#"---
+ id: "{}"
+ title: "{}"
+ blip: {}
+ date: {}
+ status: "{}"
+ ---
+
+ # {}
+
+ ## Context
+
+ [Describe the context and problem statement, e.g., in free form using two to three sentences. You may want to articulate the problem in form of a question.]
+
+ ## Decision
+
+ [Describe the decision that was made]
+
+ ## Consequences
+
+ [Describe the resulting context, after applying the decision. All consequences should be listed here, not just the "positive" ones. A particular decision may have positive, negative, and neutral consequences, but all of them affect the team and project in the future.]
+ "#,
+            adr.id,
+            adr.title,
+            blip,
+            adr.timestamp,
+            status.as_str(),
+            adr.title,
+        );
+
+        std::fs::write(file_path, content)?;
+        Ok(())
+    }
+
+    fn refresh_edit_adr_state(&mut self, adr_id: i32) {
+        let Some(adr) = self.adrs.iter().find(|item| item.id == adr_id) else {
+            return;
+        };
+
+        let status = AdrStatus::parse(&adr.status).unwrap_or(AdrStatus::Proposed);
+
+        if let Some(edit_state) = &mut self.edit_adr_state {
+            edit_state.id = adr.id;
+            edit_state.title = adr.title.clone();
+            edit_state.status = status;
+            edit_state.field = AdrEditField::Save;
+        }
     }
 }
 

@@ -1,6 +1,7 @@
 use crate::app::state::{AdrStatus, App, AppScreen};
 use crate::db::queries::AdrUpdateParams;
 use crossterm::event::KeyCode;
+use std::time::{Duration, Instant};
 
 #[allow(clippy::missing_const_for_fn)]
 pub async fn handle_edit_adr_input(app: &mut App, key: KeyCode) {
@@ -94,30 +95,27 @@ fn handle_edit_input(edit_state: &mut AdrEditState, key: KeyCode) {
 }
 
 async fn apply_edit_save(app: &mut App) {
-    let (Some(adr), Some(edit_state)) = (app.adrs.get(app.selected_adr_index), &app.edit_adr_state)
-    else {
+    let Some(edit_state) = app.edit_adr_state.as_ref() else {
         return;
     };
 
     let params = AdrUpdateParams {
-        id: adr.id,
+        id: edit_state.id,
         title: Some(edit_state.title.clone()),
         blip_name: None,
         status: Some(edit_state.status.as_str().to_string()),
         created: None,
     };
 
-    match app.actions.update_adr(&params).await {
+    match app.update_adr(params).await {
         Ok(()) => {
             app.status_message = "ADR updated successfully".to_string();
+            app.save_notice_until = Some(Instant::now() + Duration::from_secs(2));
         }
         Err(e) => {
             app.status_message = format!("Failed to update ADR: {e}");
+            app.save_notice_until = Some(Instant::now() + Duration::from_secs(3));
         }
-    }
-
-    if let Ok(adrs) = app.actions.fetch_adrs_for_blip("").await {
-        app.adrs = adrs;
     }
 
     if let Some(edit_state) = &mut app.edit_adr_state {
@@ -127,6 +125,7 @@ async fn apply_edit_save(app: &mut App) {
 
 #[derive(Clone)]
 pub struct AdrEditState {
+    pub id: i32,
     pub field: AdrEditField,
     pub title: String,
     pub status: AdrStatus,

@@ -56,6 +56,27 @@ pub async fn handle_edit_blip_input(app: &mut App, key: KeyCode) {
                 }
             }
         }
+        KeyCode::Left | KeyCode::Right => {
+            if let Some(edit_state) = &mut app.edit_blip_state {
+                if edit_state.editing {
+                    handle_edit_input(edit_state, key);
+                } else {
+                    match edit_state.field {
+                        EditField::Ring => match key {
+                            KeyCode::Left => edit_state.prev_ring(),
+                            KeyCode::Right => edit_state.next_ring(),
+                            _ => {}
+                        },
+                        EditField::Quadrant => match key {
+                            KeyCode::Left => edit_state.prev_quadrant(),
+                            KeyCode::Right => edit_state.next_quadrant(),
+                            _ => {}
+                        },
+                        _ => {}
+                    }
+                }
+            }
+        }
         _ => {
             if let Some(edit_state) = &mut app.edit_blip_state {
                 if edit_state.editing {
@@ -110,11 +131,22 @@ async fn apply_edit_save(app: &mut App) {
         return;
     };
 
+    let ring = crate::Ring::parse(&edit_state.ring)
+        .or_else(|| crate::Ring::from_index(edit_state.ring_index));
+    let quadrant = crate::Quadrant::parse(&edit_state.quadrant)
+        .or_else(|| crate::Quadrant::from_index(edit_state.quadrant_index));
+
+    if ring.is_none() || quadrant.is_none() {
+        app.status_message = "Ring and quadrant are required".to_string();
+        app.save_notice_until = Some(Instant::now() + Duration::from_secs(3));
+        return;
+    }
+
     let params = crate::db::queries::BlipUpdateParams {
         id: edit_state.id,
         name: Some(edit_state.name.clone()),
-        ring: crate::Ring::from_index(edit_state.ring_index),
-        quadrant: crate::Quadrant::from_index(edit_state.quadrant_index),
+        ring,
+        quadrant,
         tag: Some(edit_state.tag.clone()),
         description: Some(edit_state.description.clone()),
         adr_id: edit_state.adr_id,
