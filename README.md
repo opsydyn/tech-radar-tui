@@ -23,6 +23,26 @@ Keyboard-driven terminal UI for creating Architectural Decision Records (ADRs) a
 - Headless stats mode for CI or scripts
 - Built with [Ratatui](https://ratatui.rs/) ([GitHub](https://github.com/ratatui/ratatui))
 
+## Team workflow
+
+- Treat Markdown as the long-lived record and the SQLite DB as a shared index; commit both so teams stay in sync.
+- Keep `adrs/` and `blips/` in version control and review them like code (ADR status changes should be explicit).
+- Store the SQLite file in the repo (default `adrs.db`) and update it when you add or edit entries.
+- Prefer one logical change per commit (e.g., new blip + optional ADR + DB update) for clean review history.
+- Keep commit messages descriptive (why the tech moved rings/why the decision changed).
+- Resolve conflicts by picking the latest Markdown edits, then re-open the TUI to refresh DB state.
+- Use Settings to align team paths (`ADR_DIR`, `BLIP_DIR`, `DATABASE_NAME`) so generated files land in the same repo.
+- In CI or pre-release, run headless stats to sanity-check totals before tagging a release.
+- Use a git-first approach: branch, review, merge, and let the DB + Markdown travel together for governance.
+
+## Working with agents
+
+- Share the repo and run the TUI in headless mode so agents can read stats and propose updates.
+- Ask agents to draft blips/ADRs as Markdown first, then use the TUI to register them in the DB.
+- Keep agent-generated changes small and reviewable (one blip or ADR per change).
+- Use consistent naming so agents can find the right record to edit.
+- Treat agents like contributors: require PRs, review diffs, and keep commit messages clear.
+
 ## Quick start
 
 ```bash

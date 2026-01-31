@@ -739,6 +739,7 @@ impl App {
  blip: {}
  date: {}
  status: "{}"
+ authors: ["{}"]
  ---
  
  # {}
@@ -760,6 +761,7 @@ impl App {
             blip,
             timestamp,
             status.as_str(),
+            self.actions.author_name,
             self.blip_data.name
         )
     }
@@ -1024,7 +1026,7 @@ impl App {
 
         if let Some(edit_state) = &mut self.edit_adr_state {
             edit_state.id = adr.id;
-            edit_state.title = adr.title.clone();
+            edit_state.title.clone_from(&adr.title);
             edit_state.status = status;
             edit_state.field = AdrEditField::Save;
         }
