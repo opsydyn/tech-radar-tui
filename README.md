@@ -21,6 +21,7 @@ Keyboard-driven terminal UI for creating Architectural Decision Records (ADRs) a
 - Quadrant + ring selection with live radar placement
 - Charts and radar visualizations
 - Headless stats mode for CI or scripts
+- Built with [Ratatui](https://ratatui.rs/) ([GitHub](https://github.com/ratatui/ratatui))
 
 ## Quick start
 
