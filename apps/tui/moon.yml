@@ -36,6 +36,11 @@ tasks:
     inputs:
       - '@globs(sources)'
       - '@globs(tests)'
+  format-fix:
+    command: 'cargo fmt --all'
+    inputs:
+      - '@globs(sources)'
+      - '@globs(tests)'
   lint:
     command: 'cargo clippy'
     inputs:

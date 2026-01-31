@@ -18,6 +18,6 @@ projects:
 vcs:
   hooks:
     pre-commit:
-      - 'moon run tui:format --affected --status=staged'
+      - 'moon run tui:format-fix --affected --status=staged'
       - 'moon run tui:lint --affected --status=staged'
   syncHooks: true
