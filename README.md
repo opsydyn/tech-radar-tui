@@ -22,6 +22,7 @@ Keyboard-driven terminal UI for creating Architectural Decision Records (ADRs) a
 - Charts and radar visualizations
 - Headless stats mode for CI or scripts
 - Built with [Ratatui](https://ratatui.rs/) ([GitHub](https://github.com/ratatui/ratatui))
+- Inspired by the [Thoughtworks Technology Radar](https://www.thoughtworks.com/radar)
 
 ## Team workflow
 
