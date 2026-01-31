@@ -345,6 +345,8 @@ pub async fn run(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut Ap
             // Generate file in a controlled async context
             match app.generate_file().await {
                 Ok(path) => {
+                    app.refresh_completion_stats().await;
+
                     // Transition to success state
                     if file_gen_machine
                         .process_event(&FileGenEvent::Success(path), app)

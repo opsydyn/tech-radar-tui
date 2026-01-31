@@ -8,6 +8,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line as TextLine, Span, Text};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use ratatui::Frame;
+use tachyonfx::EffectRenderer;
 
 pub fn render_main(app: &App, f: &mut Frame<'_>) {
     let main_layout = build_main_layout(app, f);
@@ -219,6 +220,7 @@ fn entry_info_lines(app: &App) -> Vec<TextLine<'_>> {
 fn render_side_panel(app: &App, f: &mut Frame<'_>, area: Rect) {
     match app.input_state {
         InputState::WaitingForCommand => render_charts_panel(app, f, area),
+        InputState::Completed => render_completion_panel(app, f, area),
         _ if app.blip_data.quadrant.is_some() && app.blip_data.ring.is_some() => {
             render_mini_selection_radar(app, f, area);
         }
@@ -252,6 +254,88 @@ fn render_mini_selection_radar(app: &App, f: &mut Frame<'_>, area: Rect) {
             app.blip_data.ring,
             app.animation_counter,
         );
+    }
+}
+
+pub struct CompletionStats {
+    pub total_blips: i64,
+    pub total_adrs: i64,
+    pub coverage: Option<f64>,
+    pub recent: Vec<CompletionBlip>,
+}
+
+pub struct CompletionBlip {
+    pub name: String,
+    pub ring: String,
+    pub quadrant: String,
+}
+
+fn render_completion_panel(app: &App, f: &mut Frame<'_>, area: Rect) {
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(14), Constraint::Min(6)])
+        .split(area);
+
+    let radar_area = Rect {
+        x: layout[0].x,
+        y: layout[0].y,
+        width: layout[0].width.min(20),
+        height: layout[0].height.min(14),
+    };
+
+    if radar_area.height >= 5 {
+        render_radar(
+            f,
+            radar_area,
+            app.blip_data.quadrant,
+            app.blip_data.ring,
+            app.animation_counter,
+        );
+    }
+
+    if let Some(stats) = app.completion_stats.as_ref() {
+        let stats_block = Block::default()
+            .title("Completion Stats")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan));
+
+        let coverage_line = stats.coverage.map_or_else(
+            || "ADR coverage: n/a".to_string(),
+            |coverage| format!("ADR coverage: {coverage:.1}%"),
+        );
+
+        let mut lines = vec![
+            TextLine::from(format!("Total blips: {}", stats.total_blips)),
+            TextLine::from(format!("Total ADRs: {}", stats.total_adrs)),
+            TextLine::from(coverage_line),
+            TextLine::from(""),
+            TextLine::from(Span::styled(
+                "Recent blips",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )),
+        ];
+
+        for blip in &stats.recent {
+            lines.push(TextLine::from(format!(
+                "- {} | {} | {}",
+                blip.name, blip.quadrant, blip.ring
+            )));
+        }
+
+        let stats_paragraph = Paragraph::new(Text::from(lines))
+            .block(stats_block)
+            .wrap(Wrap { trim: true });
+
+        f.render_widget(stats_paragraph, layout[1]);
+
+        if let Ok(mut effect) = app.completion_fx.lock() {
+            if let Some(effect) = effect.as_mut() {
+                let buffer = f.buffer_mut();
+                buffer.render_effect(effect, layout[1], app.last_tick);
+            }
+        }
     }
 }
 

@@ -5,10 +5,19 @@ use crate::{Quadrant, Ring};
 use color_eyre::Result;
 use std::{
     path::{Path, PathBuf},
-    time::Instant,
+    sync::Mutex,
+    time::{Duration, Instant},
 };
 
 use crate::app::input::screens::edit_adr::AdrEditState;
+use crate::ui::screens::main::{CompletionBlip, CompletionStats};
+use ratatui::layout::Rect;
+use ratatui::style::Color;
+use ratatui_core::style::Color as CoreColor;
+use tachyonfx::fx;
+use tachyonfx::CellFilter;
+use tachyonfx::Effect;
+use tachyonfx::Interpolation;
 
 #[derive(Debug)]
 pub struct BlipData {
@@ -24,10 +33,6 @@ impl BlipData {
             quadrant: None,
             ring: None,
         }
-    }
-
-    pub const fn is_complete(&self) -> bool {
-        !self.name.is_empty() && self.quadrant.is_some() && self.ring.is_some()
     }
 }
 
@@ -226,12 +231,17 @@ pub struct App {
     pub input_mode: Option<InputMode>,
     pub adr_status: Option<AdrStatus>,
     pub status_message: String,
-    pub save_notice_until: Option<std::time::Instant>,
+    pub save_notice_until: Option<Instant>,
     pub actions: AppActions,
     pub animation_counter: f64,
     pub last_frame: Instant,
+    pub last_tick: Duration,
     pub animation_paused: bool,
     pub show_help: bool,
+    pub completion_stats: Option<CompletionStats>,
+    pub completion_fx: Mutex<Option<Effect>>,
+    pub ring_pie_fx: Mutex<Option<Effect>>,
+    pub ring_pie_area: Mutex<Option<Rect>>,
     pub screen: AppScreen,
     pub blips: Vec<crate::db::models::BlipRecord>,
     pub selected_blip_index: usize,
@@ -264,11 +274,16 @@ impl App {
             save_notice_until: None,
             actions: AppActions::new(),
             animation_counter: 0.0,
-
             last_frame: Instant::now(),
+            last_tick: Duration::from_millis(0),
             animation_paused: false,
             show_help: false,
+            completion_stats: None,
+            completion_fx: Mutex::new(None),
+            ring_pie_fx: Mutex::new(None),
+            ring_pie_area: Mutex::new(None),
             screen: AppScreen::Main,
+
             blips: Vec::new(),
             selected_blip_index: 0,
             edit_blip_state: None,
@@ -299,6 +314,7 @@ impl App {
         let now = Instant::now();
         let delta = now.duration_since(self.last_frame);
         self.last_frame = now;
+        self.last_tick = delta;
 
         if let Some(until) = self.save_notice_until {
             if Instant::now() >= until {
@@ -388,19 +404,105 @@ impl App {
                 InputState::ChoosingRing
             }
             InputState::ChoosingRing => {
-                if self.blip_data.is_complete() {
-                    // We'll handle file generation in the main event loop
-                    // since we can't use async in this method
+                if let Some(ring) = Ring::from_index(self.ring_selection_index) {
+                    self.blip_data.ring = Some(ring);
                     InputState::GeneratingFile
                 } else {
-                    self.status_message = "Missing data. Please complete all fields.".to_string();
+                    self.status_message = "Invalid ring selection.".to_string();
                     InputState::ChoosingRing
                 }
             }
             InputState::GeneratingFile => InputState::GeneratingFile, // Stay in this state until file is generated
-            InputState::Completed => InputState::WaitingForCommand,
+            InputState::Completed => {
+                self.completion_stats = None;
+                if let Ok(mut effect) = self.completion_fx.lock() {
+                    *effect = None;
+                }
+                InputState::WaitingForCommand
+            }
         };
         self.current_input.clear();
+    }
+
+    pub async fn refresh_completion_stats(&mut self) {
+        let total_blips = self.actions.count_blips().await.unwrap_or(0);
+        let total_adrs = self.actions.count_adrs().await.unwrap_or(0);
+        let recent = self.actions.recent_blips(5).await.unwrap_or_default();
+
+        let coverage = if total_blips > 0 {
+            #[allow(clippy::cast_precision_loss)]
+            Some((total_adrs as f64 / total_blips as f64) * 100.0)
+        } else {
+            None
+        };
+
+        let recent = recent
+            .into_iter()
+            .map(|blip| {
+                let ring = blip
+                    .ring
+                    .map_or_else(|| "(none)".to_string(), |ring| ring.as_str().to_string());
+                let quadrant = blip.quadrant.map_or_else(
+                    || "(none)".to_string(),
+                    |quadrant| quadrant.as_str().to_string(),
+                );
+                CompletionBlip {
+                    name: blip.name,
+                    ring,
+                    quadrant,
+                }
+            })
+            .collect();
+
+        self.completion_stats = Some(CompletionStats {
+            total_blips,
+            total_adrs,
+            coverage,
+            recent,
+        });
+
+        if let Ok(mut effect) = self.completion_fx.lock() {
+            *effect = Some(fx::fade_from_fg(
+                CoreColor::Yellow,
+                (800, Interpolation::SineInOut),
+            ));
+        }
+    }
+
+    pub fn ensure_ring_pie_fx(&self) {
+        let Ok(mut effect) = self.ring_pie_fx.lock() else {
+            return;
+        };
+
+        if effect.is_some() {
+            return;
+        }
+
+        let area = self.ring_pie_area.lock().map_or(None, |area| *area);
+        let Some(area) = area else {
+            return;
+        };
+
+        let mut key_filters = Vec::new();
+        let row_count = 4_u16.min(area.height);
+        for row in 0..row_count {
+            let key_area = Rect {
+                x: area.x,
+                y: area.y + row,
+                width: 2,
+                height: 1,
+            };
+            key_filters.push(CellFilter::Area(key_area));
+        }
+
+        let filter = CellFilter::AnyOf(key_filters);
+        let shimmer = fx::ping_pong(fx::fade_from_fg(
+            Color::White,
+            (2400, Interpolation::SineInOut),
+        ))
+        .with_filter(filter);
+
+        *effect = Some(fx::repeating(shimmer));
     }
 
     pub fn reset(&mut self) {
@@ -411,6 +513,16 @@ impl App {
         self.adr_status = None;
         self.status_message.clear();
         self.save_notice_until = None;
+        self.completion_stats = None;
+        if let Ok(mut effect) = self.completion_fx.lock() {
+            *effect = None;
+        }
+        if let Ok(mut effect) = self.ring_pie_fx.lock() {
+            *effect = None;
+        }
+        if let Ok(mut area) = self.ring_pie_area.lock() {
+            *area = None;
+        }
         self.quadrant_selection_index = 0;
         self.ring_selection_index = 0;
         self.adr_status_selection_index = 0;

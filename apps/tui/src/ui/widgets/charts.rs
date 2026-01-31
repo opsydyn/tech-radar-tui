@@ -1,15 +1,15 @@
 use crate::app::App;
 use crate::ui::widgets::radar::quadrant_color;
 use crate::{Quadrant, Ring};
-use ratatui::layout::{Constraint, Direction, Layout, Margin, Rect};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Margin, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::symbols::Marker;
 use ratatui::text::{Line as TextLine, Span};
 use ratatui::widgets::{
-    Axis, Bar, BarChart, BarGroup, Block, Borders, Chart, Dataset, GraphType, Paragraph, Tabs,
+    Axis, Bar, BarChart, BarGroup, Block, Borders, Chart, Dataset, GraphType, Paragraph, Tabs, Wrap,
 };
 use ratatui::Frame;
-use tui_piechart::{PieChart, PieSlice, Resolution};
+use tachyonfx::EffectRenderer;
 
 pub fn render_chart_tabs(app: &App, f: &mut Frame<'_>, area: Rect) {
     let titles = ["Scatter", "Types"]
@@ -287,19 +287,20 @@ pub fn render_ring_barchart(app: &App, f: &mut Frame<'_>, area: Rect) {
 }
 
 pub fn render_ring_piechart(app: &App, f: &mut Frame<'_>, area: Rect) {
+    let block = Block::default()
+        .title("Ring Distribution")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+
     if app.blips.is_empty() {
-        let block = Block::default()
-            .title("Ring Distribution")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan));
         let paragraph = Paragraph::new("No blips available")
             .block(block)
-            .alignment(ratatui::layout::Alignment::Center);
+            .alignment(Alignment::Center);
         f.render_widget(paragraph, area);
         return;
     }
 
-    let mut counts = [0_f64; 4];
+    let mut counts = [0_u64; 4];
     for blip in &app.blips {
         let index = match blip.ring {
             Some(Ring::Hold) => 0,
@@ -308,26 +309,105 @@ pub fn render_ring_piechart(app: &App, f: &mut Frame<'_>, area: Rect) {
             Some(Ring::Adopt) => 3,
             _ => continue,
         };
-        counts[index] += 1.0;
+        counts[index] += 1;
     }
 
-    let slices = vec![
-        PieSlice::new("Hold", counts[0], Color::Gray),
-        PieSlice::new("Assess", counts[1], Color::Cyan),
-        PieSlice::new("Trial", counts[2], Color::Yellow),
-        PieSlice::new("Adopt", counts[3], Color::Rgb(0, 0, 238)),
+    let labels = ["Hold", "Assess", "Trial", "Adopt"];
+    let colors = [
+        Color::Gray,
+        Color::Cyan,
+        Color::Yellow,
+        Color::Rgb(0, 0, 238),
     ];
 
-    let chart = PieChart::new(slices)
-        .block(
-            Block::default()
-                .title("Ring Distribution")
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Cyan)),
-        )
-        .show_legend(true)
-        .show_percentages(true)
-        .resolution(Resolution::Braille);
+    let inner = block.inner(area);
+    f.render_widget(block, area);
 
-    f.render_widget(chart, area);
+    let chart_split = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(7), Constraint::Length(5)])
+        .split(inner);
+
+    let chart_area = chart_split[0];
+    let legend_area = chart_split[1];
+
+    let max_value = counts.iter().copied().max().unwrap_or(0).max(1);
+    let mut bar_lines: Vec<TextLine<'_>> = Vec::new();
+
+    for (index, label) in labels.iter().enumerate() {
+        let count = counts[index];
+        let width = chart_area.width.max(1) - 2;
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            clippy::cast_precision_loss
+        )]
+        let fill = ((count as f64 / max_value as f64) * f64::from(width))
+            .round()
+            .clamp(1.0, f64::from(width)) as usize;
+        let empty = width as usize - fill;
+
+        let bar = format!("{}{}", "█".repeat(fill), "░".repeat(empty));
+        bar_lines.push(TextLine::from(vec![
+            Span::styled(*label, Style::default().fg(colors[index])),
+            Span::raw(" "),
+            Span::styled(bar, Style::default().fg(colors[index])),
+            Span::raw(format!("  {count}")),
+        ]));
+    }
+
+    let bar_block = Block::default()
+        .title("Rings")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+
+    let bar_paragraph = Paragraph::new(bar_lines)
+        .block(bar_block)
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: true });
+
+    f.render_widget(bar_paragraph, chart_area);
+
+    let total = counts.iter().sum::<u64>().max(1);
+    let legend_lines = labels
+        .iter()
+        .enumerate()
+        .map(|(index, label)| {
+            #[allow(clippy::cast_precision_loss)]
+            let percent = (counts[index] as f64 / total as f64) * 100.0;
+            TextLine::from(vec![
+                Span::styled("■ ", Style::default().fg(colors[index])),
+                Span::styled(*label, Style::default().fg(Color::White)),
+                Span::raw(format!("  {:>3} ({percent:>4.1}%)", counts[index])),
+            ])
+        })
+        .collect::<Vec<_>>();
+
+    let legend_block = Block::default()
+        .title("Legend")
+        .borders(Borders::NONE)
+        .border_style(Style::default().fg(Color::Gray));
+
+    let legend = Paragraph::new(legend_lines)
+        .block(legend_block)
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: true });
+    f.render_widget(legend, legend_area);
+
+    if let Ok(mut area) = app.ring_pie_area.lock() {
+        if *area != Some(legend_area) {
+            *area = Some(legend_area);
+            if let Ok(mut effect) = app.ring_pie_fx.lock() {
+                *effect = None;
+            }
+        }
+    }
+
+    app.ensure_ring_pie_fx();
+    if let Ok(mut effect) = app.ring_pie_fx.lock() {
+        if let Some(effect) = effect.as_mut() {
+            let buffer = f.buffer_mut();
+            buffer.render_effect(effect, legend_area, app.last_tick);
+        }
+    }
 }
