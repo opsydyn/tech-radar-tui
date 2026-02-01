@@ -3,10 +3,9 @@ use std::io;
 use std::rc::Rc;
 
 use ratzilla::ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Modifier, Style},
     text::{Line as TextLine, Span, Text},
-    widgets::canvas::{Canvas, Circle, Line as CanvasLine},
     widgets::{
         Bar, BarChart, BarGroup, Block, Borders, Cell, Paragraph, Row, Scrollbar,
         ScrollbarOrientation, ScrollbarState, Table, Wrap,
@@ -106,8 +105,8 @@ fn main() -> io::Result<()> {
                     .add_modifier(Modifier::BOLD),
             )
             .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::Cyan));
-        let inner = block.inner(area);
+            .border_style(Style::default().fg(Color::Gray));
+        let inner = block.inner(area).inner(Margin::new(1, 1));
         f.render_widget(block, area);
 
         let data = data.borrow();
@@ -136,19 +135,21 @@ fn render_dashboard(
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),
-            Constraint::Min(10),
-            Constraint::Length(7),
+            Constraint::Length(1),
+            Constraint::Min(12),
+            Constraint::Length(8),
         ])
         .split(area);
 
     render_header(export, f, main_layout[0]);
+    render_gap(f, main_layout[1]);
 
     let content = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
-        .split(main_layout[1]);
+        .constraints([Constraint::Percentage(58), Constraint::Percentage(42)])
+        .split(main_layout[2]);
 
-    render_radar(export, f, content[0]);
+    render_radar_panel(export, f, content[0]);
 
     let charts = Layout::default()
         .direction(Direction::Vertical)
@@ -158,27 +159,17 @@ fn render_dashboard(
     render_blip_type_chart(export, f, charts[0]);
     render_ring_chart(export, f, charts[1]);
 
-    render_footer(export, tab_index, row_offset, f, main_layout[2]);
+    render_footer(export, tab_index, row_offset, f, main_layout[3]);
 }
 
 fn render_header(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>, area: Rect) {
     let total_blips = export.blips.len();
     let total_adrs = export.adrs.len();
-    let _coverage = if total_blips > 0 {
-        let ratio = total_adrs as f64 / total_blips as f64;
-        ratio * 100.0
-    } else {
-        0.0
-    };
 
-    let line = TextLine::from(vec![
-        Span::styled("Overview", Style::default().fg(Color::Yellow)),
-        Span::raw("  "),
-        Span::styled(
-            format!("Blips: {total_blips}  ADRs: {total_adrs}"),
-            Style::default().fg(Color::White),
-        ),
-    ]);
+    let line = TextLine::from(vec![Span::styled(
+        format!("Blips: {total_blips}  ADRs: {total_adrs}"),
+        Style::default().fg(Color::White),
+    )]);
 
     let block = Block::default()
         .title("Overview")
@@ -190,6 +181,13 @@ fn render_header(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>, are
         .alignment(Alignment::Left)
         .wrap(Wrap { trim: true });
 
+    f.render_widget(paragraph, area);
+}
+
+fn render_gap(f: &mut ratzilla::ratatui::Frame<'_>, area: Rect) {
+    let paragraph = Paragraph::new("")
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(Color::Gray));
     f.render_widget(paragraph, area);
 }
 
@@ -210,18 +208,19 @@ fn render_footer(
         .collect::<Vec<_>>();
 
     let info = TextLine::from(vec![
-        Span::styled("Data", Style::default().fg(Color::Gray)),
+        Span::styled("Tables", Style::default().fg(Color::Gray)),
         Span::raw("  "),
         Span::raw(format!("{total_blips} blips • {total_adrs} ADRs")),
         Span::raw("  "),
         Span::styled("Tab/1-3", Style::default().fg(Color::Gray)),
         Span::raw("  "),
-        Span::styled("Arrows to scroll", Style::default().fg(Color::Gray)),
+        Span::styled("Arrows", Style::default().fg(Color::Gray)),
     ]);
 
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
+            Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Min(0),
@@ -233,8 +232,8 @@ fn render_footer(
         .style(Style::default().fg(Color::Gray))
         .highlight_style(
             Style::default()
-                .fg(Color::Black)
-                .bg(Color::Yellow)
+                .fg(Color::White)
+                .bg(Color::Rgb(0, 0, 238))
                 .add_modifier(Modifier::BOLD),
         )
         .divider(Span::raw("|"));
@@ -242,8 +241,9 @@ fn render_footer(
     let info_paragraph = Paragraph::new(Text::from(info)).alignment(Alignment::Center);
     f.render_widget(info_paragraph, layout[0]);
     f.render_widget(tabs, layout[1]);
+    render_gap(f, layout[2]);
 
-    let table_area = layout[2];
+    let table_area = layout[3];
 
     match tab_index {
         0 => render_recent_blips(export, row_offset, f, table_area),
@@ -253,7 +253,7 @@ fn render_footer(
     }
 }
 
-fn render_radar(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>, area: Rect) {
+fn render_radar_panel(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>, area: Rect) {
     let block = Block::default()
         .title("Tech Radar")
         .borders(Borders::ALL)
@@ -314,7 +314,7 @@ fn render_radar(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>, area
         .collect::<Vec<_>>();
 
     f.render_widget(
-        Canvas::default()
+        ratzilla::ratatui::widgets::canvas::Canvas::default()
             .paint(|ctx| {
                 let width = f64::from(square.width);
                 let height = f64::from(square.height);
@@ -324,34 +324,34 @@ fn render_radar(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>, area
 
                 for i in 1..=4 {
                     let ring_radius = max_radius * (f64::from(i) / 4.0);
-                    ctx.draw(&Circle {
+                    ctx.draw(&ratzilla::ratatui::widgets::canvas::Circle {
                         x: center_x,
                         y: center_y,
                         radius: ring_radius,
-                        color: Color::DarkGray,
+                        color: Color::Gray,
                     });
                 }
 
-                ctx.draw(&CanvasLine {
+                ctx.draw(&ratzilla::ratatui::widgets::canvas::Line {
                     x1: center_x,
                     y1: center_y - max_radius,
                     x2: center_x,
                     y2: center_y + max_radius,
-                    color: Color::DarkGray,
+                    color: Color::Gray,
                 });
-                ctx.draw(&CanvasLine {
+                ctx.draw(&ratzilla::ratatui::widgets::canvas::Line {
                     x1: center_x - max_radius,
                     y1: center_y,
                     x2: center_x + max_radius,
                     y2: center_y,
-                    color: Color::DarkGray,
+                    color: Color::Gray,
                 });
 
                 for (angle, radius, color) in &points {
                     let x = angle.cos().mul_add(max_radius * radius, center_x);
                     let y = angle.sin().mul_add(max_radius * radius, center_y);
 
-                    ctx.draw(&Circle {
+                    ctx.draw(&ratzilla::ratatui::widgets::canvas::Circle {
                         x,
                         y,
                         radius: max_radius * 0.035,
@@ -369,11 +369,17 @@ fn render_blip_type_chart(export: &RadarExport, f: &mut ratzilla::ratatui::Frame
     let block = Block::default()
         .title("Blip Types")
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan));
+        .border_style(Style::default().fg(Color::Gray));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
+    let chart_area = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .split(inner)[1];
+
     let mut counts = [0_u64; 4];
+
     for blip in &export.blips {
         let Some(quadrant) = blip.quadrant.as_deref() else {
             continue;
@@ -417,16 +423,21 @@ fn render_blip_type_chart(export: &RadarExport, f: &mut ratzilla::ratatui::Frame
         .bar_gap(1)
         .bar_width(6);
 
-    f.render_widget(chart, inner);
+    f.render_widget(chart, chart_area);
 }
 
 fn render_ring_chart(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>, area: Rect) {
     let block = Block::default()
         .title("Ring Distribution")
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Cyan));
+        .border_style(Style::default().fg(Color::Gray));
     let inner = block.inner(area);
     f.render_widget(block, area);
+
+    let chart_area = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .split(inner)[1];
 
     let mut counts = [0_u64; 4];
     for blip in &export.blips {
@@ -454,7 +465,7 @@ fn render_ring_chart(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>,
     let mut lines = Vec::new();
     for (index, label) in labels.iter().enumerate() {
         let count = counts[index];
-        let width = inner.width.max(1) - 2;
+        let width = chart_area.width.max(1) - 2;
         let max_value = counts.iter().copied().max().unwrap_or(1) as f64;
         let ratio = count as f64 / max_value;
         let fill = ((ratio * f64::from(width)).round()).clamp(1.0, f64::from(width)) as usize;
@@ -469,10 +480,27 @@ fn render_ring_chart(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>,
         ]));
     }
 
+    let total = counts.iter().sum::<u64>().max(1);
+    lines.push(TextLine::from(""));
+    lines.push(TextLine::from(Span::styled(
+        "Legend",
+        Style::default().fg(Color::Gray),
+    )));
+
+    for (index, label) in labels.iter().enumerate() {
+        let count = counts[index];
+        let percent = (count as f64 / total as f64) * 100.0;
+        lines.push(TextLine::from(vec![
+            Span::styled("■ ", Style::default().fg(colors[index])),
+            Span::styled(*label, Style::default().fg(Color::White)),
+            Span::raw(format!("  {count} ({percent:.1}%)")),
+        ]));
+    }
+
     let paragraph = Paragraph::new(Text::from(lines))
         .alignment(Alignment::Left)
         .wrap(Wrap { trim: true });
-    f.render_widget(paragraph, inner);
+    f.render_widget(paragraph, chart_area);
 }
 
 fn render_recent_blips(
@@ -520,11 +548,19 @@ fn render_blip_rows(
     ])
     .style(
         Style::default()
-            .fg(Color::Yellow)
+            .fg(Color::Rgb(0, 0, 238))
+            .bg(Color::Rgb(200, 200, 200))
             .add_modifier(Modifier::BOLD),
     );
 
-    let rows = blips.iter().skip(row_offset).take(max_rows).map(|blip| {
+    let rows = std::iter::once(Row::new(vec![
+        Cell::from(" "),
+        Cell::from(" "),
+        Cell::from(" "),
+        Cell::from(" "),
+        Cell::from(" "),
+    ]))
+    .chain(blips.iter().skip(row_offset).take(max_rows).map(|blip| {
         Row::new(vec![
             Cell::from(blip.name.clone()),
             Cell::from(
@@ -537,7 +573,7 @@ fn render_blip_rows(
             Cell::from(if blip.has_adr { "Yes" } else { "No" }),
         ])
         .style(Style::default().fg(Color::White))
-    });
+    }));
 
     let table = Table::new(
         rows,
@@ -557,8 +593,15 @@ fn render_blip_rows(
     let mut scrollbar_state = ScrollbarState::new(blips.len())
         .position(row_offset)
         .viewport_content_length(max_rows.min(area.height.saturating_sub(1) as usize));
-    let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
-    f.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
+    let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+        .thumb_style(Style::default().fg(Color::Rgb(0, 0, 238)));
+    let scroll_area = Rect {
+        x: area.x,
+        y: area.y.saturating_add(1),
+        width: area.width,
+        height: area.height.saturating_sub(1),
+    };
+    f.render_stateful_widget(scrollbar, scroll_area, &mut scrollbar_state);
 }
 
 fn render_all_adrs(
@@ -583,11 +626,18 @@ fn render_all_adrs(
     ])
     .style(
         Style::default()
-            .fg(Color::Yellow)
+            .fg(Color::Rgb(0, 0, 238))
+            .bg(Color::Rgb(200, 200, 200))
             .add_modifier(Modifier::BOLD),
     );
 
-    let rows = export.adrs.iter().skip(row_offset).take(18).map(|adr| {
+    let rows = std::iter::once(Row::new(vec![
+        Cell::from(" "),
+        Cell::from(" "),
+        Cell::from(" "),
+        Cell::from(" "),
+    ]))
+    .chain(export.adrs.iter().skip(row_offset).take(18).map(|adr| {
         Row::new(vec![
             Cell::from(adr.title.clone()),
             Cell::from(adr.blip_name.clone()),
@@ -595,7 +645,7 @@ fn render_all_adrs(
             Cell::from(adr.timestamp.clone()),
         ])
         .style(Style::default().fg(Color::White))
-    });
+    }));
 
     let table = Table::new(
         rows,
@@ -614,8 +664,15 @@ fn render_all_adrs(
     let mut scrollbar_state = ScrollbarState::new(export.adrs.len())
         .position(row_offset)
         .viewport_content_length(18.min(area.height.saturating_sub(1) as usize));
-    let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
-    f.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
+    let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+        .thumb_style(Style::default().fg(Color::Rgb(0, 0, 238)));
+    let scroll_area = Rect {
+        x: area.x,
+        y: area.y.saturating_add(1),
+        width: area.width,
+        height: area.height.saturating_sub(1),
+    };
+    f.render_stateful_widget(scrollbar, scroll_area, &mut scrollbar_state);
 }
 
 fn quadrant_color(quadrant: Option<&str>) -> Color {
