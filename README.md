@@ -113,6 +113,8 @@ ratatui_adr-gen --debug
 
 ## Web radar (Ratzilla)
 
+![Ratzilla web radar](ratzilla.png)
+
 Local dev:
 
 1. Export radar data:
