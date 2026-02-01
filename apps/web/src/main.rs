@@ -373,10 +373,20 @@ fn render_blip_type_chart(export: &RadarExport, f: &mut ratzilla::ratatui::Frame
     let inner = block.inner(area);
     f.render_widget(block, area);
 
+    let chart_split = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(68), Constraint::Percentage(32)])
+        .split(inner);
+
     let chart_area = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(1), Constraint::Min(0)])
-        .split(inner)[1];
+        .split(chart_split[0])[1];
+
+    let legend_area = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Min(0)])
+        .split(chart_split[1])[1];
 
     let mut counts = [0_u64; 4];
 
@@ -424,6 +434,47 @@ fn render_blip_type_chart(export: &RadarExport, f: &mut ratzilla::ratatui::Frame
         .bar_width(6);
 
     f.render_widget(chart, chart_area);
+
+    let total = counts.iter().sum::<u64>().max(1);
+    let mut legend_lines = Vec::new();
+    legend_lines.push(TextLine::from(Span::styled(
+        "Legend",
+        Style::default().fg(Color::Gray),
+    )));
+    legend_lines.push(TextLine::from(""));
+
+    for (index, label) in labels.iter().enumerate() {
+        let count = counts[index];
+        let percent = (count as f64 / total as f64) * 100.0;
+        legend_lines.push(TextLine::from(vec![
+            Span::styled(
+                "■ ",
+                Style::default()
+                    .fg(colors[index])
+                    .add_modifier(Modifier::DIM),
+            ),
+            Span::styled(
+                *label,
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::DIM),
+            ),
+            Span::styled(
+                format!("  {count} ({percent:.1}%)"),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::DIM),
+            ),
+        ]));
+        if index + 1 < labels.len() {
+            legend_lines.push(TextLine::from(""));
+        }
+    }
+
+    let legend = Paragraph::new(Text::from(legend_lines))
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: true });
+    f.render_widget(legend, legend_area);
 }
 
 fn render_ring_chart(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>, area: Rect) {
@@ -481,20 +532,38 @@ fn render_ring_chart(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>,
     }
 
     let total = counts.iter().sum::<u64>().max(1);
-    lines.push(TextLine::from(""));
     lines.push(TextLine::from(Span::styled(
         "Legend",
         Style::default().fg(Color::Gray),
     )));
+    lines.push(TextLine::from(""));
 
     for (index, label) in labels.iter().enumerate() {
         let count = counts[index];
         let percent = (count as f64 / total as f64) * 100.0;
         lines.push(TextLine::from(vec![
-            Span::styled("■ ", Style::default().fg(colors[index])),
-            Span::styled(*label, Style::default().fg(Color::White)),
-            Span::raw(format!("  {count} ({percent:.1}%)")),
+            Span::styled(
+                "■ ",
+                Style::default()
+                    .fg(colors[index])
+                    .add_modifier(Modifier::DIM),
+            ),
+            Span::styled(
+                *label,
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::DIM),
+            ),
+            Span::styled(
+                format!("  {count} ({percent:.1}%)"),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::DIM),
+            ),
         ]));
+        if index + 1 < labels.len() {
+            lines.push(TextLine::from(""));
+        }
     }
 
     let paragraph = Paragraph::new(Text::from(lines))
