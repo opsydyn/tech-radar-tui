@@ -7,7 +7,10 @@ use ratzilla::ratatui::{
     style::{Color, Modifier, Style},
     text::{Line as TextLine, Span, Text},
     widgets::canvas::{Canvas, Circle, Line as CanvasLine},
-    widgets::{Bar, BarChart, BarGroup, Block, Borders, Paragraph, Wrap},
+    widgets::{
+        Bar, BarChart, BarGroup, Block, Borders, Cell, Paragraph, Row, Scrollbar,
+        ScrollbarOrientation, ScrollbarState, Table, Wrap,
+    },
     Terminal,
 };
 use ratzilla::{DomBackend, WebRenderer};
@@ -21,7 +24,7 @@ struct RadarExport {
     adrs: Vec<RadarAdr>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Clone)]
 #[allow(dead_code)]
 struct RadarBlip {
     id: i32,
@@ -47,11 +50,51 @@ struct RadarAdr {
 
 fn main() -> io::Result<()> {
     let data = Rc::new(RefCell::new(None::<RadarExport>));
+    let tab_index = Rc::new(RefCell::new(0_usize));
+    let row_offset = Rc::new(RefCell::new(0_usize));
 
     spawn_local(fetch_radar(data.clone()));
 
     let backend = DomBackend::new()?;
     let terminal = Terminal::new(backend)?;
+
+    terminal.on_key_event({
+        let tab_index = tab_index.clone();
+        let row_offset = row_offset.clone();
+        move |event| match event.code {
+            ratzilla::event::KeyCode::Left => {
+                let mut index = tab_index.borrow_mut();
+                *index = if *index == 0 { 2 } else { *index - 1 };
+                *row_offset.borrow_mut() = 0;
+            }
+            ratzilla::event::KeyCode::Right => {
+                let mut index = tab_index.borrow_mut();
+                *index = (*index + 1) % 3;
+                *row_offset.borrow_mut() = 0;
+            }
+            ratzilla::event::KeyCode::Up => {
+                let mut offset = row_offset.borrow_mut();
+                *offset = offset.saturating_sub(1);
+            }
+            ratzilla::event::KeyCode::Down => {
+                let mut offset = row_offset.borrow_mut();
+                *offset = (*offset + 1).min(2000);
+            }
+            ratzilla::event::KeyCode::Char('1') => {
+                *tab_index.borrow_mut() = 0;
+                *row_offset.borrow_mut() = 0;
+            }
+            ratzilla::event::KeyCode::Char('2') => {
+                *tab_index.borrow_mut() = 1;
+                *row_offset.borrow_mut() = 0;
+            }
+            ratzilla::event::KeyCode::Char('3') => {
+                *tab_index.borrow_mut() = 2;
+                *row_offset.borrow_mut() = 0;
+            }
+            _ => {}
+        }
+    });
 
     terminal.draw_web(move |f| {
         let area = f.area();
@@ -69,7 +112,9 @@ fn main() -> io::Result<()> {
 
         let data = data.borrow();
         if let Some(export) = data.as_ref() {
-            render_dashboard(export, f, inner);
+            let index = *tab_index.borrow();
+            let row_offset = *row_offset.borrow();
+            render_dashboard(export, index, row_offset, f, inner);
         } else {
             let paragraph = Paragraph::new(Text::from(TextLine::from("Loading radar.json...")))
                 .alignment(Alignment::Center);
@@ -80,7 +125,13 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
-fn render_dashboard(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>, area: Rect) {
+fn render_dashboard(
+    export: &RadarExport,
+    tab_index: usize,
+    row_offset: usize,
+    f: &mut ratzilla::ratatui::Frame<'_>,
+    area: Rect,
+) {
     let main_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -101,19 +152,19 @@ fn render_dashboard(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>, 
 
     let charts = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(content[1]);
 
     render_blip_type_chart(export, f, charts[0]);
     render_ring_chart(export, f, charts[1]);
 
-    render_footer(export, f, main_layout[2]);
+    render_footer(export, tab_index, row_offset, f, main_layout[2]);
 }
 
 fn render_header(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>, area: Rect) {
     let total_blips = export.blips.len();
     let total_adrs = export.adrs.len();
-    let coverage = if total_blips > 0 {
+    let _coverage = if total_blips > 0 {
         let ratio = total_adrs as f64 / total_blips as f64;
         ratio * 100.0
     } else {
@@ -124,7 +175,7 @@ fn render_header(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>, are
         Span::styled("Overview", Style::default().fg(Color::Yellow)),
         Span::raw("  "),
         Span::styled(
-            format!("Blips: {total_blips}  ADRs: {total_adrs}  Coverage: {coverage:.1}%"),
+            format!("Blips: {total_blips}  ADRs: {total_adrs}"),
             Style::default().fg(Color::White),
         ),
     ]);
@@ -142,18 +193,68 @@ fn render_header(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>, are
     f.render_widget(paragraph, area);
 }
 
-fn render_footer(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>, area: Rect) {
+fn render_footer(
+    export: &RadarExport,
+    tab_index: usize,
+    row_offset: usize,
+    f: &mut ratzilla::ratatui::Frame<'_>,
+    area: Rect,
+) {
     let total_blips = export.blips.len();
     let total_adrs = export.adrs.len();
 
-    let line = TextLine::from(vec![
+    let tabs = ["Recent blips", "All blips", "All ADRs"];
+    let tab_titles = tabs
+        .iter()
+        .map(|title| TextLine::from(*title))
+        .collect::<Vec<_>>();
+
+    let info = TextLine::from(vec![
         Span::styled("Data", Style::default().fg(Color::Gray)),
         Span::raw("  "),
         Span::raw(format!("{total_blips} blips • {total_adrs} ADRs")),
+        Span::raw("  "),
+        Span::styled("Tab/1-3", Style::default().fg(Color::Gray)),
+        Span::raw("  "),
+        Span::styled("Arrows to scroll", Style::default().fg(Color::Gray)),
     ]);
 
-    let paragraph = Paragraph::new(Text::from(line)).alignment(Alignment::Center);
-    f.render_widget(paragraph, area);
+    let info_paragraph = Paragraph::new(Text::from(info)).alignment(Alignment::Center);
+    f.render_widget(info_paragraph, area);
+
+    let tabs_area = Rect {
+        x: area.x,
+        y: area.y.saturating_add(1),
+        width: area.width,
+        height: area.height.saturating_sub(1),
+    };
+
+    let tabs = ratzilla::ratatui::widgets::Tabs::new(tab_titles)
+        .select(tab_index)
+        .style(Style::default().fg(Color::Gray))
+        .highlight_style(
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )
+        .divider(Span::raw("|"));
+
+    f.render_widget(tabs, tabs_area);
+
+    let table_area = Rect {
+        x: area.x,
+        y: area.y.saturating_add(2),
+        width: area.width,
+        height: area.height.saturating_sub(2),
+    };
+
+    match tab_index {
+        0 => render_recent_blips(export, row_offset, f, table_area),
+        1 => render_all_blips(export, row_offset, f, table_area),
+        2 => render_all_adrs(export, row_offset, f, table_area),
+        _ => {}
+    }
 }
 
 fn render_radar(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>, area: Rect) {
@@ -361,7 +462,6 @@ fn render_ring_chart(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>,
         let max_value = counts.iter().copied().max().unwrap_or(1) as f64;
         let ratio = count as f64 / max_value;
         let fill = ((ratio * f64::from(width)).round()).clamp(1.0, f64::from(width)) as usize;
-
         let empty = width as usize - fill;
 
         let bar = format!("{}{}", "█".repeat(fill), "░".repeat(empty));
@@ -377,6 +477,145 @@ fn render_ring_chart(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>,
         .alignment(Alignment::Left)
         .wrap(Wrap { trim: true });
     f.render_widget(paragraph, inner);
+}
+
+fn render_recent_blips(
+    export: &RadarExport,
+    row_offset: usize,
+    f: &mut ratzilla::ratatui::Frame<'_>,
+    area: Rect,
+) {
+    let mut blips = export.blips.clone();
+    blips.sort_by(|a, b| b.created.cmp(&a.created));
+
+    render_blip_rows(&blips, row_offset, f, area, 8);
+}
+
+fn render_all_blips(
+    export: &RadarExport,
+    row_offset: usize,
+    f: &mut ratzilla::ratatui::Frame<'_>,
+    area: Rect,
+) {
+    render_blip_rows(&export.blips, row_offset, f, area, 18);
+}
+
+fn render_blip_rows(
+    blips: &[RadarBlip],
+    row_offset: usize,
+    f: &mut ratzilla::ratatui::Frame<'_>,
+    area: Rect,
+    max_rows: usize,
+) {
+    if blips.is_empty() {
+        let paragraph = Paragraph::new("No blips available")
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::Gray));
+        f.render_widget(paragraph, area);
+        return;
+    }
+
+    let header = Row::new(vec![
+        Cell::from("Name"),
+        Cell::from("Quadrant"),
+        Cell::from("Ring"),
+        Cell::from("Tag"),
+        Cell::from("Has ADR"),
+    ])
+    .style(
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+    );
+
+    let rows = blips.iter().skip(row_offset).take(max_rows).map(|blip| {
+        Row::new(vec![
+            Cell::from(blip.name.clone()),
+            Cell::from(
+                blip.quadrant
+                    .clone()
+                    .unwrap_or_else(|| "(none)".to_string()),
+            ),
+            Cell::from(blip.ring.clone().unwrap_or_else(|| "(none)".to_string())),
+            Cell::from(blip.tag.clone().unwrap_or_default()),
+            Cell::from(if blip.has_adr { "Yes" } else { "No" }),
+        ])
+        .style(Style::default().fg(Color::White))
+    });
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(20),
+            Constraint::Length(12),
+            Constraint::Length(8),
+            Constraint::Length(14),
+            Constraint::Length(8),
+        ],
+    )
+    .header(header)
+    .column_spacing(1);
+
+    f.render_widget(table, area);
+
+    let mut scrollbar_state = ScrollbarState::new(blips.len()).position(row_offset);
+    let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
+    f.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
+}
+
+fn render_all_adrs(
+    export: &RadarExport,
+    row_offset: usize,
+    f: &mut ratzilla::ratatui::Frame<'_>,
+    area: Rect,
+) {
+    if export.adrs.is_empty() {
+        let paragraph = Paragraph::new("No ADRs available")
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(Color::Gray));
+        f.render_widget(paragraph, area);
+        return;
+    }
+
+    let header = Row::new(vec![
+        Cell::from("Title"),
+        Cell::from("Blip"),
+        Cell::from("Status"),
+        Cell::from("Date"),
+    ])
+    .style(
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+    );
+
+    let rows = export.adrs.iter().skip(row_offset).take(18).map(|adr| {
+        Row::new(vec![
+            Cell::from(adr.title.clone()),
+            Cell::from(adr.blip_name.clone()),
+            Cell::from(adr.status.clone()),
+            Cell::from(adr.timestamp.clone()),
+        ])
+        .style(Style::default().fg(Color::White))
+    });
+
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(24),
+            Constraint::Length(14),
+            Constraint::Length(10),
+            Constraint::Length(16),
+        ],
+    )
+    .header(header)
+    .column_spacing(1);
+
+    f.render_widget(table, area);
+
+    let mut scrollbar_state = ScrollbarState::new(export.adrs.len()).position(row_offset);
+    let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
+    f.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
 }
 
 fn quadrant_color(quadrant: Option<&str>) -> Color {
