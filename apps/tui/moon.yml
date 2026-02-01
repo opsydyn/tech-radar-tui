@@ -80,3 +80,10 @@ tasks:
     options:
       interactive: false
       outputStyle: 'stream'
+
+  web-export-db:
+    command: 'cp apps/tui/adrs.db apps/web/adrs.db'
+    inputs:
+      - '/apps/tui/adrs.db'
+    outputs:
+      - '/apps/web/adrs.db'

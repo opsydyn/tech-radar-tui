@@ -20,4 +20,5 @@ vcs:
     pre-commit:
       - 'moon run tui:format-fix --affected --status=staged'
       - 'moon run tui:lint --affected --status=staged'
+      - 'moon run tui:web-export-db'
   syncHooks: true
