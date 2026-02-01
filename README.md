@@ -141,6 +141,7 @@ GitHub Pages:
 
 - Pushes to `master` build and deploy the web radar via `.github/workflows/pages.yml`.
 - The workflow runs the export, builds `apps/web`, and publishes `apps/web/dist`.
+- Pages is served under `/tech-radar-tui/`, so the web bundle uses `public_url` to match.
 
 ## Install
 
