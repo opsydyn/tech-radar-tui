@@ -136,8 +136,8 @@ fn render_dashboard(
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),
-            Constraint::Min(8),
-            Constraint::Length(5),
+            Constraint::Min(10),
+            Constraint::Length(7),
         ])
         .split(area);
 
@@ -219,15 +219,14 @@ fn render_footer(
         Span::styled("Arrows to scroll", Style::default().fg(Color::Gray)),
     ]);
 
-    let info_paragraph = Paragraph::new(Text::from(info)).alignment(Alignment::Center);
-    f.render_widget(info_paragraph, area);
-
-    let tabs_area = Rect {
-        x: area.x,
-        y: area.y.saturating_add(1),
-        width: area.width,
-        height: area.height.saturating_sub(1),
-    };
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
+        ])
+        .split(area);
 
     let tabs = ratzilla::ratatui::widgets::Tabs::new(tab_titles)
         .select(tab_index)
@@ -240,14 +239,11 @@ fn render_footer(
         )
         .divider(Span::raw("|"));
 
-    f.render_widget(tabs, tabs_area);
+    let info_paragraph = Paragraph::new(Text::from(info)).alignment(Alignment::Center);
+    f.render_widget(info_paragraph, layout[0]);
+    f.render_widget(tabs, layout[1]);
 
-    let table_area = Rect {
-        x: area.x,
-        y: area.y.saturating_add(2),
-        width: area.width,
-        height: area.height.saturating_sub(2),
-    };
+    let table_area = layout[2];
 
     match tab_index {
         0 => render_recent_blips(export, row_offset, f, table_area),
@@ -558,7 +554,9 @@ fn render_blip_rows(
 
     f.render_widget(table, area);
 
-    let mut scrollbar_state = ScrollbarState::new(blips.len()).position(row_offset);
+    let mut scrollbar_state = ScrollbarState::new(blips.len())
+        .position(row_offset)
+        .viewport_content_length(max_rows.min(area.height.saturating_sub(1) as usize));
     let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
     f.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
 }
@@ -613,7 +611,9 @@ fn render_all_adrs(
 
     f.render_widget(table, area);
 
-    let mut scrollbar_state = ScrollbarState::new(export.adrs.len()).position(row_offset);
+    let mut scrollbar_state = ScrollbarState::new(export.adrs.len())
+        .position(row_offset)
+        .viewport_content_length(18.min(area.height.saturating_sub(1) as usize));
     let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight);
     f.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
 }
