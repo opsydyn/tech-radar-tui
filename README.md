@@ -113,6 +113,8 @@ ratatui_adr-gen --debug
 
 ## Web radar (Ratzilla)
 
+A browser-based view of the Tech Radar built with Ratzilla (Ratatui compiled to WebAssembly). It renders the same radar, charts, and tables, powered by the `--export` JSON output.
+
 ![Ratzilla web radar](ratzilla.png)
 
 Local dev:
@@ -123,14 +125,14 @@ Local dev:
 cargo run --release --manifest-path apps/tui/Cargo.toml --bin ratatui_adr-gen -- --export > apps/web/radar.json
 ```
 
-2. Install web tooling:
+1. Install web tooling:
 
 ```bash
 cargo install trunk
 rustup target add wasm32-unknown-unknown
 ```
 
-3. Run the web UI:
+1. Run the web UI:
 
 ```bash
 cd apps/web
