@@ -26,6 +26,8 @@ Cargo.lock
 
 # artifacts
 /dist
+apps/web/dist
+apps/web/target
 
 # macOS
 .DS_Store

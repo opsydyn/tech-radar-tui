@@ -84,10 +84,17 @@ JSON output (LLM-friendly):
 cargo run --release --manifest-path apps/tui/Cargo.toml --bin ratatui_adr-gen -- --headless --json
 ```
 
+Full export (for web UIs):
+
+```bash
+cargo run --release --manifest-path apps/tui/Cargo.toml --bin ratatui_adr-gen -- --export > apps/web/radar.json
+```
+
 ## Flags
 
 - `--headless`: Print stats and exit
 - `--json`: Print headless stats as JSON
+- `--export`: Export full radar data as JSON
 - `--db <path>`: Override database path
 - `--adr-dir <path>`: Override ADR output directory
 - `--blip-dir <path>`: Override Blip output directory
@@ -98,10 +105,42 @@ cargo run --release --manifest-path apps/tui/Cargo.toml --bin ratatui_adr-gen --
 ```bash
 ratatui_adr-gen --headless
 ratatui_adr-gen --headless --json
+ratatui_adr-gen --export
 ratatui_adr-gen --db /path/to/adrs.db
 ratatui_adr-gen --adr-dir ./adrs --blip-dir ./blips
 ratatui_adr-gen --debug
 ```
+
+## Web radar (Ratzilla)
+
+Local dev:
+
+1. Export radar data:
+
+```bash
+cargo run --release --manifest-path apps/tui/Cargo.toml --bin ratatui_adr-gen -- --export > apps/web/radar.json
+```
+
+2. Install web tooling:
+
+```bash
+cargo install trunk
+rustup target add wasm32-unknown-unknown
+```
+
+3. Run the web UI:
+
+```bash
+cd apps/web
+trunk serve
+```
+
+Open `http://localhost:8080` to view the radar.
+
+GitHub Pages:
+
+- Pushes to `master` build and deploy the web radar via `.github/workflows/pages.yml`.
+- The workflow runs the export, builds `apps/web`, and publishes `apps/web/dist`.
 
 ## Install
 

@@ -11,6 +11,10 @@ pub struct CliArgs {
     #[arg(long)]
     pub json: bool,
 
+    /// Export full radar data as JSON and exit
+    #[arg(long)]
+    pub export: bool,
+
     /// Enable debug logging
     #[arg(long)]
     pub debug: bool,

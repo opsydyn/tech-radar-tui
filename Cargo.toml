@@ -1,3 +1,11 @@
 [workspace]
-members = ["apps/tui"]
+members = ["apps/tui", "apps/web"]
 resolver = "2"
+
+[workspace.package]
+description = "Tech Radar TUI and web dashboard"
+license = "MIT"
+repository = "https://github.com/opsydyn/tech-radar-tui"
+keywords = ["tui", "tech-radar", "ratatui"]
+categories = ["command-line-utilities", "wasm"]
+readme = "README.txt"

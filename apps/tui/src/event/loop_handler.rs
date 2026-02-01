@@ -164,9 +164,14 @@ impl TryFrom<(FileGenState, &FileGenEvent, &mut App)> for NextState {
 }
 
 /// Run the application in headless mode (no UI)
-pub async fn run_headless(app: &mut App, json: bool) -> Result<()> {
+pub async fn run_headless(app: &mut App, json: bool, export: bool) -> Result<()> {
     // Initialize database
     app.initialize_db().await?;
+
+    if export {
+        render_headless_export(app).await?;
+        return Ok(());
+    }
 
     if json {
         render_headless_json(app).await?;
@@ -213,6 +218,13 @@ async fn render_headless_stats(app: &App) -> Result<()> {
 async fn render_headless_json(app: &App) -> Result<()> {
     let stats = build_headless_stats(app).await?;
     let json = serde_json::to_string_pretty(&stats)?;
+    println!("{json}");
+    Ok(())
+}
+
+async fn render_headless_export(app: &App) -> Result<()> {
+    let export = build_radar_export(app).await?;
+    let json = serde_json::to_string_pretty(&export)?;
     println!("{json}");
     Ok(())
 }
@@ -270,6 +282,39 @@ async fn build_headless_stats(app: &App) -> Result<HeadlessStats> {
     })
 }
 
+async fn build_radar_export(app: &App) -> Result<RadarExport> {
+    let blips = app.actions.fetch_blips().await?;
+    let adrs = app.actions.fetch_adrs_for_blip("").await?;
+
+    let blips = blips
+        .into_iter()
+        .map(|blip| RadarBlip {
+            id: blip.id,
+            name: blip.name,
+            ring: blip.ring.map(|ring| ring.as_str().to_string()),
+            quadrant: blip.quadrant.map(|quadrant| quadrant.as_str().to_string()),
+            tag: blip.tag,
+            description: blip.description,
+            created: blip.created,
+            has_adr: blip.has_adr,
+            adr_id: blip.adr_id,
+        })
+        .collect();
+
+    let adrs = adrs
+        .into_iter()
+        .map(|adr| RadarAdr {
+            id: adr.id,
+            title: adr.title,
+            blip_name: adr.blip_name,
+            status: adr.status,
+            timestamp: adr.timestamp,
+        })
+        .collect();
+
+    Ok(RadarExport { blips, adrs })
+}
+
 #[derive(serde::Serialize)]
 struct HeadlessStats {
     total_blips: i64,
@@ -286,6 +331,34 @@ struct HeadlessBlip {
     quadrant: String,
     ring: String,
     created: String,
+}
+
+#[derive(serde::Serialize)]
+struct RadarExport {
+    blips: Vec<RadarBlip>,
+    adrs: Vec<RadarAdr>,
+}
+
+#[derive(serde::Serialize)]
+struct RadarBlip {
+    id: i32,
+    name: String,
+    ring: Option<String>,
+    quadrant: Option<String>,
+    tag: Option<String>,
+    description: Option<String>,
+    created: String,
+    has_adr: bool,
+    adr_id: Option<i32>,
+}
+
+#[derive(serde::Serialize)]
+struct RadarAdr {
+    id: i32,
+    title: String,
+    blip_name: String,
+    status: String,
+    timestamp: String,
 }
 
 /// Run the main application event loop

@@ -25,9 +25,9 @@ async fn main() -> Result<()> {
     let mut app = App::new();
 
     // Check if we're running in a terminal or forced headless mode
-    if !is_terminal() || args.headless {
+    if !is_terminal() || args.headless || args.export {
         // Run in headless mode
-        return event::run_headless(&mut app, args.json).await;
+        return event::run_headless(&mut app, args.json, args.export).await;
     }
 
     // Initialize database
