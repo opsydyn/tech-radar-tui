@@ -181,21 +181,16 @@ If macOS still blocks the app: System Settings → Privacy & Security → "Open 
 make release-check
 ```
 
-## Releases with release-plz
+## Release tags
 
-We use release-plz with conventional commits to automate versioning and tags.
-
-- `fix:` → patch release
-- `feat:` → minor release
-- `feat!:`/`fix!:` or `BREAKING CHANGE:` in the body → major release
+We use annotated git tags for releases.
 
 Workflow:
 
-1. Merge conventional commits to `master`.
-2. release-plz opens a Release PR with version bumps + changelog.
-3. Merge the Release PR to publish the release and tag.
-
-If you need to cut a release manually, bump the version in `apps/tui/Cargo.toml` and let the workflow tag it.
+1. Update version in `apps/tui/Cargo.toml`.
+2. Run release checks: `make release-check`.
+3. Tag the release: `make tag-release VERSION=vX.Y.Z`.
+4. Push tags and publish the release notes on GitHub.
 
 ## Project layout
 

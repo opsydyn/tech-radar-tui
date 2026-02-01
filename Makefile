@@ -21,7 +21,11 @@ web-export:
 web-serve:
 	cd apps/web && trunk serve
 
-# Release-plz handles tags via its workflow.
 tag-release:
-	@echo "release-plz handles tags. Merge the Release PR instead."
+	@if [ -z "$(VERSION)" ]; then \
+		echo "Usage: make tag-release VERSION=vX.Y.Z"; \
+		exit 1; \
+	fi
+	git tag -a $(VERSION) -m "Release $(VERSION)"
+	git push origin $(VERSION)
 
