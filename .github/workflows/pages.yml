@@ -31,11 +31,8 @@ jobs:
         with:
           tool: trunk
 
-      - name: Copy DB for export
-        run: cp adrs.db apps/web/adrs.db
-
       - name: Export radar JSON
-        run: DATABASE_NAME=apps/web/adrs.db cargo run --release --manifest-path apps/tui/Cargo.toml --bin ratatui_adr-gen -- --export > apps/web/radar.json
+        run: cargo run --release --manifest-path apps/tui/Cargo.toml --bin ratatui_adr-gen -- --export > apps/web/radar.json
 
       - name: Build web bundle
         run: trunk build --release
