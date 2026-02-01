@@ -135,8 +135,23 @@ If macOS still blocks the app: System Settings → Privacy & Security → "Open 
 
 ```bash
 make release-check
-make tag-release VERSION=v0.2.0
 ```
+
+## Releases with release-plz
+
+We use release-plz with conventional commits to automate versioning and tags.
+
+- `fix:` → patch release
+- `feat:` → minor release
+- `feat!:`/`fix!:` or `BREAKING CHANGE:` in the body → major release
+
+Workflow:
+
+1. Merge conventional commits to `master`.
+2. release-plz opens a Release PR with version bumps + changelog.
+3. Merge the Release PR to publish the release and tag.
+
+If you need to cut a release manually, bump the version in `apps/tui/Cargo.toml` and let the workflow tag it.
 
 ## Project layout
 

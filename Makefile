@@ -16,9 +16,4 @@ release-check:
 	moon run tui:build
 
 tag-release:
-	@if [ -z "$(VERSION)" ]; then \
-		echo "Usage: make tag-release VERSION=vX.Y.Z"; \
-		exit 1; \
-	fi
-	git tag -a $(VERSION) -m "Release $(VERSION)"
-	git push origin $(VERSION)
+	@echo "release-plz handles tags. Merge the Release PR instead."
