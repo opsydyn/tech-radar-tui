@@ -47,10 +47,21 @@ struct RadarAdr {
     timestamp: String,
 }
 
+struct AnimationState {
+    counter: f64,
+    last_tick: f64,
+    paused: bool,
+}
+
 fn main() -> io::Result<()> {
     let data = Rc::new(RefCell::new(None::<RadarExport>));
     let tab_index = Rc::new(RefCell::new(0_usize));
     let row_offset = Rc::new(RefCell::new(0_usize));
+    let animation_state = Rc::new(RefCell::new(AnimationState {
+        counter: 0.0,
+        last_tick: 0.0,
+        paused: false,
+    }));
 
     spawn_local(fetch_radar(data.clone()));
 
@@ -60,6 +71,7 @@ fn main() -> io::Result<()> {
     terminal.on_key_event({
         let tab_index = tab_index.clone();
         let row_offset = row_offset.clone();
+        let animation_state = animation_state.clone();
         move |event| match event.code {
             ratzilla::event::KeyCode::Left => {
                 let mut index = tab_index.borrow_mut();
@@ -79,6 +91,10 @@ fn main() -> io::Result<()> {
                 let mut offset = row_offset.borrow_mut();
                 *offset = (*offset + 1).min(2000);
             }
+            ratzilla::event::KeyCode::Char(' ') => {
+                let mut state = animation_state.borrow_mut();
+                state.paused = !state.paused;
+            }
             ratzilla::event::KeyCode::Char('1') => {
                 *tab_index.borrow_mut() = 0;
                 *row_offset.borrow_mut() = 0;
@@ -96,9 +112,24 @@ fn main() -> io::Result<()> {
     });
 
     terminal.draw_web(move |f| {
+        let now = web_sys::window()
+            .and_then(|window| window.performance())
+            .map(|performance| performance.now() / 1000.0)
+            .unwrap_or_default();
+
+        let mut animation = animation_state.borrow_mut();
+        let delta = (now - animation.last_tick).max(0.0);
+        animation.last_tick = now;
+        if !animation.paused {
+            animation.counter += delta * 1.4;
+            if animation.counter > 2.0 * std::f64::consts::PI {
+                animation.counter -= 2.0 * std::f64::consts::PI;
+            }
+        }
+
         let area = f.area();
         let block = Block::default()
-            .title("Tech Radar")
+            .title("TECH RADAR")
             .title_style(
                 Style::default()
                     .fg(Color::Cyan)
@@ -113,7 +144,15 @@ fn main() -> io::Result<()> {
         if let Some(export) = data.as_ref() {
             let index = *tab_index.borrow();
             let row_offset = *row_offset.borrow();
-            render_dashboard(export, index, row_offset, f, inner);
+            render_dashboard(
+                export,
+                index,
+                row_offset,
+                animation.counter,
+                animation.paused,
+                f,
+                inner,
+            );
         } else {
             let paragraph = Paragraph::new(Text::from(TextLine::from("Loading radar.json...")))
                 .alignment(Alignment::Center);
@@ -128,6 +167,8 @@ fn render_dashboard(
     export: &RadarExport,
     tab_index: usize,
     row_offset: usize,
+    animation_counter: f64,
+    animation_paused: bool,
     f: &mut ratzilla::ratatui::Frame<'_>,
     area: Rect,
 ) {
@@ -149,7 +190,7 @@ fn render_dashboard(
         .constraints([Constraint::Percentage(58), Constraint::Percentage(42)])
         .split(main_layout[2]);
 
-    render_radar_panel(export, f, content[0]);
+    render_radar_panel(export, animation_counter, f, content[0]);
 
     let charts = Layout::default()
         .direction(Direction::Vertical)
@@ -159,7 +200,14 @@ fn render_dashboard(
     render_blip_type_chart(export, f, charts[0]);
     render_ring_chart(export, f, charts[1]);
 
-    render_footer(export, tab_index, row_offset, f, main_layout[3]);
+    render_footer(
+        export,
+        tab_index,
+        row_offset,
+        animation_paused,
+        f,
+        main_layout[3],
+    );
 }
 
 fn render_header(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>, area: Rect) {
@@ -195,6 +243,7 @@ fn render_footer(
     export: &RadarExport,
     tab_index: usize,
     row_offset: usize,
+    animation_paused: bool,
     f: &mut ratzilla::ratatui::Frame<'_>,
     area: Rect,
 ) {
@@ -207,7 +256,7 @@ fn render_footer(
         .map(|title| TextLine::from(*title))
         .collect::<Vec<_>>();
 
-    let info = TextLine::from(vec![
+    let mut info_items = vec![
         Span::styled("Tables", Style::default().fg(Color::Gray)),
         Span::raw("  "),
         Span::raw(format!("{total_blips} blips • {total_adrs} ADRs")),
@@ -215,7 +264,23 @@ fn render_footer(
         Span::styled("Tab/1-3", Style::default().fg(Color::Gray)),
         Span::raw("  "),
         Span::styled("Arrows", Style::default().fg(Color::Gray)),
-    ]);
+        Span::raw("  "),
+        Span::styled("Space", Style::default().fg(Color::Gray)),
+        Span::raw(": pause"),
+    ];
+    info_items.push(Span::raw("  "));
+    if animation_paused {
+        info_items.push(Span::styled(
+            "Animation paused",
+            Style::default().fg(Color::Yellow),
+        ));
+    } else {
+        info_items.push(Span::styled(
+            "Animation active",
+            Style::default().fg(Color::Gray),
+        ));
+    }
+    let info = TextLine::from(info_items);
 
     let layout = Layout::default()
         .direction(Direction::Vertical)
@@ -253,9 +318,14 @@ fn render_footer(
     }
 }
 
-fn render_radar_panel(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>, area: Rect) {
+fn render_radar_panel(
+    export: &RadarExport,
+    animation_counter: f64,
+    f: &mut ratzilla::ratatui::Frame<'_>,
+    area: Rect,
+) {
     let block = Block::default()
-        .title("Tech Radar")
+        .title("TECH RADAR")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
     let inner = block.inner(area);
@@ -309,7 +379,15 @@ fn render_radar_panel(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>
             let ring_step = 0.2 + (f64::from(ring) * 0.18);
             let radius = ring_step + (jitter * 0.1);
 
-            Some((angle, radius, quadrant_color(blip.quadrant.as_deref())))
+            let pulse = (animation_counter * 0.6 + jitter).sin().mul_add(0.25, 0.75);
+            let blip_radius = 0.03 + (pulse * 0.015);
+
+            Some((
+                angle,
+                radius,
+                blip_radius,
+                quadrant_color(blip.quadrant.as_deref()),
+            ))
         })
         .collect::<Vec<_>>();
 
@@ -332,29 +410,60 @@ fn render_radar_panel(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>
                     });
                 }
 
+                let pulse = (animation_counter * 0.6).sin().mul_add(0.5, 0.5);
+                let pulse_radius = max_radius * (0.45 + pulse * 0.5);
+                ctx.draw(&ratzilla::ratatui::widgets::canvas::Circle {
+                    x: center_x,
+                    y: center_y,
+                    radius: pulse_radius,
+                    color: Color::LightCyan,
+                });
+
                 ctx.draw(&ratzilla::ratatui::widgets::canvas::Line {
                     x1: center_x,
                     y1: center_y - max_radius,
                     x2: center_x,
                     y2: center_y + max_radius,
-                    color: Color::Gray,
+                    color: Color::DarkGray,
                 });
                 ctx.draw(&ratzilla::ratatui::widgets::canvas::Line {
                     x1: center_x - max_radius,
                     y1: center_y,
                     x2: center_x + max_radius,
                     y2: center_y,
-                    color: Color::Gray,
+                    color: Color::DarkGray,
                 });
 
-                for (angle, radius, color) in &points {
+                let sweep_angle = animation_counter * 1.4;
+                let sweep_x = sweep_angle.cos().mul_add(max_radius, center_x);
+                let sweep_y = sweep_angle.sin().mul_add(max_radius, center_y);
+                ctx.draw(&ratzilla::ratatui::widgets::canvas::Line {
+                    x1: center_x,
+                    y1: center_y,
+                    x2: sweep_x,
+                    y2: sweep_y,
+                    color: Color::LightCyan,
+                });
+
+                let ghost_angle = sweep_angle + (std::f64::consts::PI / 20.0);
+                let ghost_x = ghost_angle.cos().mul_add(max_radius * 0.92, center_x);
+                let ghost_y = ghost_angle.sin().mul_add(max_radius * 0.92, center_y);
+                ctx.draw(&ratzilla::ratatui::widgets::canvas::Line {
+                    x1: center_x,
+                    y1: center_y,
+                    x2: ghost_x,
+                    y2: ghost_y,
+                    color: Color::DarkGray,
+                });
+
+                for (angle, radius, blip_radius, color) in &points {
                     let x = angle.cos().mul_add(max_radius * radius, center_x);
                     let y = angle.sin().mul_add(max_radius * radius, center_y);
 
                     ctx.draw(&ratzilla::ratatui::widgets::canvas::Circle {
                         x,
                         y,
-                        radius: max_radius * 0.035,
+                        radius: max_radius * blip_radius,
                         color: *color,
                     });
                 }
