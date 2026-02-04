@@ -1,9 +1,6 @@
 
 }
 
-fn quadrant_color_from_option(value: Option<&str>) -> Color {
-    value.map_or(Color::Gray, quadrant_color)
-}
 use ratatui::widgets::canvas::{Canvas, Circle, Line as CanvasLine};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
@@ -17,6 +14,11 @@ use ratatui::{
     Frame,
 };
 use tui_piechart::{PieChart, PieSlice, Resolution};
+
+
+fn quadrant_color_from_option(value: Option<&str>) -> Color {
+    value.map_or(Color::Gray, quadrant_color)
+}
 
 #[allow(clippy::cognitive_complexity)]
 pub fn ui(app: &App, f: &mut Frame<'_>) {
@@ -35,106 +37,21 @@ pub fn ui(app: &App, f: &mut Frame<'_>) {
         return;
     }
 
+    if app.screen == AppScreen::AdrActions {
+        render_adr_actions(app, f);
+        return;
+    }
+
+    if app.screen == AppScreen::AdrDetails {
+        render_adr_details(app, f);
+        return;
+    }
+
     if app.screen == AppScreen::BlipActions {
-        let area = f.area();
+        render_blip_actions(app, f);
+        return;
+    }
 
-        // Get the selected blip
-        if let Some(selected_blip) = app.blips.get(app.selected_blip_index) {
-            // Create a centered box for the actions menu
-            let action_area = Rect {
-                x: area.width.saturating_sub(50) / 2,
-                y: area.height.saturating_sub(10) / 2,
-                width: 50.min(area.width),
-                height: 10.min(area.height),
-            };
-
-            // Create the actions menu block
-            let block = Block::default()
-                .title(format!("Actions for Blip: {}", selected_blip.name))
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::Yellow));
-
-            // Define the actions
-            let actions = [
-                "View details",
-                if selected_blip.has_adr {
-                    "View ADR"
-                } else {
-                    "Generate ADR"
-                },
-                "Edit blip",
-                "Back to list",
-            ];
-
-            // Create the text for the actions
-            let action_text = actions
-                .iter()
-                .enumerate()
-                .map(|(i, &action)| {
-                    let is_selected = i == app.blip_action_index;
-                    let style = if is_selected {
-                        Style::default()
-                            .fg(Color::Black)
-                            .bg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD)
-                    } else {
-                        Style::default().fg(Color::White)
-                    };
-                    let prefix = if is_selected { ">" } else { " " };
-
-                    TextLine::from(vec![
-                        Span::styled(format!("{prefix} "), style),
-                        Span::styled(action, style),
-                    ])
-                })
-                .collect::<Vec<_>>();
-
-            // Create the paragraph with the actions
-            let paragraph = Paragraph::new(action_text)
-                .block(block)
-                .alignment(Alignment::Left);
-
-            // Render the actions menu
-            f.render_widget(paragraph, action_area);
-
-            // Render help text at the bottom
-            let help_text = vec![
-                Span::styled(
-                    "↑/↓",
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(": Select action   "),
-                Span::styled(
-                    "Enter",
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(": Confirm   "),
-                Span::styled(
-                    "ESC",
-                    Style::default()
-                        .fg(Color::Yellow)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(": Back to list"),
-            ];
-
-            let help_area = Rect {
-                x: area.x,
-                y: area.height - 3,
-                width: area.width,
-                height: 3,
-            };
-
-            let help_paragraph = Paragraph::new(TextLine::from(help_text))
-                .block(Block::default().borders(Borders::TOP))
-                .alignment(Alignment::Center);
-
-            f.render_widget(help_paragraph, help_area);
-        }
 
         return;
     }

@@ -9,6 +9,7 @@ use ratatui::text::{Line as TextLine, Span, Text};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use ratatui::Frame;
 use tachyonfx::EffectRenderer;
+use throbber_widgets_tui::{Throbber, WhichUse, OGHAM_C};
 
 pub fn render_main(app: &App, f: &mut Frame<'_>) {
     let main_layout = build_main_layout(app, f);
@@ -22,6 +23,10 @@ pub fn render_main(app: &App, f: &mut Frame<'_>) {
     render_content_section(app, f, main_layout[1]);
     render_status_section(app, f, main_layout[2]);
     render_shortcuts(f, main_layout[3]);
+
+    if app.search_active {
+        render_search_popup(app, f, f.area());
+    }
 }
 
 fn build_main_layout(app: &App, f: &Frame<'_>) -> Vec<Rect> {
@@ -64,6 +69,11 @@ fn render_title_section(app: &App, f: &mut Frame<'_>, area: Rect) {
         .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
         .split(title_inner);
 
+    let left_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Length(1)])
+        .split(title_chunks[0]);
+
     let title_paragraph = Paragraph::new(Text::from(vec![TextLine::from(vec![
         Span::styled(
             "Tech Radar ",
@@ -79,7 +89,23 @@ fn render_title_section(app: &App, f: &mut Frame<'_>, area: Rect) {
         ),
     ])]))
     .alignment(Alignment::Left);
-    f.render_widget(title_paragraph, title_chunks[0]);
+    f.render_widget(title_paragraph, left_chunks[0]);
+
+    let search_style = if app.search_active {
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(Color::Gray)
+    };
+    let search_text = if app.search_query.is_empty() {
+        "Search (s)".to_string()
+    } else {
+        format!("Search: {}", app.search_query)
+    };
+    let search_line = TextLine::from(Span::styled(search_text, search_style));
+    let search_paragraph = Paragraph::new(Text::from(search_line)).alignment(Alignment::Left);
+    f.render_widget(search_paragraph, left_chunks[1]);
 
     render_mini_radar(f, title_chunks[1], app.animation_counter);
 }
@@ -215,6 +241,147 @@ fn entry_info_lines(app: &App) -> Vec<TextLine<'_>> {
     ]);
 
     lines
+}
+
+fn render_search_popup(app: &App, f: &mut Frame<'_>, area: Rect) {
+    let popup_area = centered_rect(70, 70, area);
+    f.render_widget(ClearWidget, popup_area);
+
+    let block = Block::default()
+        .title("Search Results")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow));
+    f.render_widget(block, popup_area);
+
+    let inner = popup_area.inner(Margin::new(1, 1));
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(2),
+            Constraint::Min(5),
+            Constraint::Length(2),
+        ])
+        .split(inner);
+
+    let query_line = TextLine::from(vec![
+        Span::styled("Query: ", Style::default().fg(Color::Gray)),
+        Span::styled(
+            app.search_query.as_str(),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]);
+
+    let query_area = sections[0];
+    let query_split = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Min(10), Constraint::Length(6)])
+        .split(query_area);
+    f.render_widget(Paragraph::new(Text::from(query_line)), query_split[0]);
+
+    let throbber = Throbber::default()
+        .throbber_set(OGHAM_C)
+        .use_type(WhichUse::Spin)
+        .style(Style::default().fg(Color::Gray))
+        .throbber_style(Style::default().fg(Color::Yellow));
+    let mut throbber_state = app.search_throbber_state.clone();
+    throbber_state.calc_next();
+    f.render_stateful_widget(throbber, query_split[1], &mut throbber_state);
+
+    let list_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(sections[1]);
+
+    render_search_column(
+        "Blips",
+        &app.filtered_blip_indices,
+        app.search_result_index,
+        0,
+        list_chunks[0],
+        app,
+        f,
+    );
+
+    let adr_offset = app.filtered_blip_indices.len();
+    render_search_column(
+        "ADRs",
+        &app.filtered_adr_indices,
+        app.search_result_index,
+        adr_offset,
+        list_chunks[1],
+        app,
+        f,
+    );
+
+    let hint = TextLine::from(vec![
+        Span::styled("↑/↓", Style::default().fg(Color::Yellow)),
+        Span::raw(": Navigate   "),
+        Span::styled("←/→", Style::default().fg(Color::Yellow)),
+        Span::raw(": Column   "),
+        Span::styled("Enter", Style::default().fg(Color::Yellow)),
+        Span::raw(": Open   "),
+        Span::styled("Esc", Style::default().fg(Color::Yellow)),
+        Span::raw(": Close"),
+    ]);
+    f.render_widget(
+        Paragraph::new(Text::from(hint)).alignment(Alignment::Center),
+        sections[2],
+    );
+}
+
+fn render_search_column(
+    title: &str,
+    indices: &[usize],
+    selected_index: usize,
+    selection_offset: usize,
+    area: Rect,
+    app: &App,
+    f: &mut Frame<'_>,
+) {
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Gray));
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    if inner.height == 0 {
+        return;
+    }
+
+    let max_rows = inner.height.saturating_sub(1) as usize;
+    let rows = indices
+        .iter()
+        .take(max_rows)
+        .enumerate()
+        .map(|(row, index)| {
+            let absolute = selection_offset + row;
+            let is_selected = absolute == selected_index;
+            let style = if is_selected {
+                Style::default().fg(Color::Black).bg(Color::Yellow)
+            } else {
+                Style::default().fg(Color::White)
+            };
+
+            let label = if title == "Blips" {
+                app.blips
+                    .get(*index)
+                    .map_or("(missing)", |blip| blip.name.as_str())
+            } else {
+                app.adrs
+                    .get(*index)
+                    .map_or("(missing)", |adr| adr.title.as_str())
+            };
+
+            TextLine::from(Span::styled(label.to_string(), style))
+        });
+
+    f.render_widget(
+        Paragraph::new(rows.collect::<Text<'_>>()).wrap(Wrap { trim: true }),
+        inner,
+    );
 }
 
 fn render_side_panel(app: &App, f: &mut Frame<'_>, area: Rect) {

@@ -13,9 +13,20 @@ pub fn render_blips_view(app: &App, f: &mut Frame<'_>) {
     let popup_area = centered_rect(90, 80, area);
     f.render_widget(ClearWidget, popup_area);
 
-    if app.blips.is_empty() {
+    let active_indices = if app.filtered_blip_indices.is_empty() {
+        (0..app.blips.len()).collect::<Vec<_>>()
+    } else {
+        app.filtered_blip_indices.clone()
+    };
+
+    if active_indices.is_empty() {
+        let title = if app.search_active || !app.search_query.is_empty() {
+            "Blips Table (0 results)"
+        } else {
+            "Blips Table"
+        };
         let block = Block::default()
-            .title("Blips Table")
+            .title(title)
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Yellow));
         let paragraph = Paragraph::new("No blips found.")
@@ -39,12 +50,16 @@ pub fn render_blips_view(app: &App, f: &mut Frame<'_>) {
             .add_modifier(Modifier::BOLD),
     );
 
-    let total_rows = app.blips.len();
+    let total_rows = active_indices.len();
     let max_visible_rows = area.height.saturating_sub(7) as usize;
 
     let scroll_offset = scroll_offset(total_rows, max_visible_rows, app.selected_blip_index);
 
-    let visible_blips = app.blips.iter().skip(scroll_offset).take(max_visible_rows);
+    let visible_blips = active_indices
+        .iter()
+        .skip(scroll_offset)
+        .take(max_visible_rows)
+        .filter_map(|index| app.blips.get(*index));
 
     let rows = visible_blips.enumerate().map(|(i, blip)| {
         let is_selected = i + scroll_offset == app.selected_blip_index;
@@ -85,17 +100,22 @@ pub fn render_blips_view(app: &App, f: &mut Frame<'_>) {
         Constraint::Length(8),
     ];
 
+    let table_title = if app.search_active || !app.search_query.is_empty() {
+        format!(
+            "Blips Table ({} of {}) • Filtered",
+            app.selected_blip_index + 1,
+            total_rows
+        )
+    } else {
+        format!(
+            "Blips Table ({} of {})",
+            app.selected_blip_index + 1,
+            total_rows
+        )
+    };
     let table = Table::new(rows, widths)
         .header(header)
-        .block(
-            Block::default()
-                .title(format!(
-                    "Blips Table ({} of {})",
-                    app.selected_blip_index + 1,
-                    total_rows
-                ))
-                .borders(Borders::ALL),
-        )
+        .block(Block::default().title(table_title).borders(Borders::ALL))
         .column_spacing(1);
 
     let chunks = Layout::default()
@@ -141,6 +161,13 @@ pub fn render_blips_view(app: &App, f: &mut Frame<'_>) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw(": Actions   "),
+        Span::styled(
+            "s",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(": Search   "),
         Span::styled(
             "q",
             Style::default()

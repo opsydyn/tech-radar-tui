@@ -8,7 +8,14 @@ use ratatui::Frame;
 pub fn render_blip_details(app: &App, f: &mut Frame<'_>) {
     let area = f.area();
 
-    let Some(blip) = app.blips.get(app.selected_blip_index) else {
+    let blip = if app.filtered_blip_indices.is_empty() {
+        app.blips.get(app.selected_blip_index)
+    } else {
+        app.filtered_blip_indices
+            .get(app.selected_blip_index)
+            .and_then(|index| app.blips.get(*index))
+    };
+    let Some(blip) = blip else {
         return;
     };
 

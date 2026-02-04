@@ -3,6 +3,8 @@ use crate::db::models::{AdrMetadataParams, BlipMetadataParams, BlipRecord};
 use crate::db::queries::{AdrUpdateParams, BlipUpdateParams};
 use crate::{Quadrant, Ring};
 use color_eyre::Result;
+use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
 use std::{
     path::{Path, PathBuf},
     sync::Mutex,
@@ -272,6 +274,12 @@ pub struct App {
     pub chart_tab_index: usize,
     pub last_checked_blip_name: Option<String>,
     pub last_blip_name_exists: bool,
+    pub search_query: String,
+    pub search_active: bool,
+    pub search_result_index: usize,
+    pub search_throbber_state: throbber_widgets_tui::ThrobberState,
+    pub filtered_blip_indices: Vec<usize>,
+    pub filtered_adr_indices: Vec<usize>,
 }
 
 impl App {
@@ -320,6 +328,12 @@ impl App {
             last_checked_blip_name: None,
 
             last_blip_name_exists: false,
+            search_query: String::new(),
+            search_active: false,
+            search_result_index: 0,
+            search_throbber_state: throbber_widgets_tui::ThrobberState::default(),
+            filtered_blip_indices: Vec::new(),
+            filtered_adr_indices: Vec::new(),
         }
     }
 
@@ -351,6 +365,13 @@ impl App {
     pub fn apply_settings_runtime(&mut self) {
         self.actions.adrs_dir = PathBuf::from(&self.settings_adr_dir);
         self.actions.blips_dir = PathBuf::from(&self.settings_blip_dir);
+    }
+
+    pub async fn ensure_adrs_loaded(&mut self) -> Result<()> {
+        if self.adrs.is_empty() {
+            self.fetch_adrs_for_blip("").await?;
+        }
+        Ok(())
     }
 
     pub async fn persist_settings(&self) -> Result<()> {
@@ -394,6 +415,10 @@ impl App {
         self.animation_counter += delta.as_secs_f64() * 2.0;
         if self.animation_counter > 2.0 * std::f64::consts::PI {
             self.animation_counter -= 2.0 * std::f64::consts::PI;
+        }
+
+        if self.search_active {
+            self.search_throbber_state.calc_next();
         }
     }
 
@@ -602,6 +627,10 @@ impl App {
         self.blip_action_index = 0;
         self.adr_action_index = 0;
         self.edit_adr_state = None;
+        self.search_query.clear();
+        self.search_active = false;
+        self.filtered_blip_indices.clear();
+        self.filtered_adr_indices.clear();
     }
 
     pub fn toggle_animation_pause(&mut self) {
@@ -611,6 +640,90 @@ impl App {
         } else {
             "Animation resumed".to_string()
         };
+    }
+
+    pub fn apply_search_filter(&mut self) {
+        if !self.search_active || self.search_query.trim().is_empty() {
+            self.filtered_blip_indices.clear();
+            self.filtered_adr_indices.clear();
+            self.search_result_index = 0;
+            self.search_throbber_state = throbber_widgets_tui::ThrobberState::default();
+            return;
+        }
+
+        let matcher = SkimMatcherV2::default();
+        let query = self.search_query.trim();
+
+        let mut blip_scores = self
+            .blips
+            .iter()
+            .enumerate()
+            .filter_map(|(index, blip)| {
+                let mut candidate = blip.name.clone();
+                if let Some(tag) = blip.tag.as_ref() {
+                    candidate.push(' ');
+                    candidate.push_str(tag);
+                }
+                if let Some(description) = blip.description.as_ref() {
+                    candidate.push(' ');
+                    candidate.push_str(description);
+                }
+                if let Some(ring) = blip.ring {
+                    candidate.push(' ');
+                    candidate.push_str(ring.as_str());
+                }
+                if let Some(quadrant) = blip.quadrant {
+                    candidate.push(' ');
+                    candidate.push_str(quadrant.as_str());
+                }
+
+                matcher
+                    .fuzzy_match(&candidate, query)
+                    .map(|score| (index, score))
+            })
+            .collect::<Vec<_>>();
+
+        blip_scores.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        self.filtered_blip_indices = blip_scores.into_iter().map(|(index, _)| index).collect();
+
+        let mut adr_scores = self
+            .adrs
+            .iter()
+            .enumerate()
+            .filter_map(|(index, adr)| {
+                let candidate = format!(
+                    "{} {} {} {}",
+                    adr.title, adr.blip_name, adr.status, adr.timestamp
+                );
+                matcher
+                    .fuzzy_match(&candidate, query)
+                    .map(|score| (index, score))
+            })
+            .collect::<Vec<_>>();
+
+        adr_scores.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        self.filtered_adr_indices = adr_scores.into_iter().map(|(index, _)| index).collect();
+
+        let total_results = self.filtered_blip_indices.len() + self.filtered_adr_indices.len();
+        if total_results == 0 {
+            self.search_result_index = 0;
+        } else if self.search_result_index >= total_results {
+            self.search_result_index = total_results.saturating_sub(1);
+        }
+
+        self.selected_blip_index = 0;
+        self.selected_adr_index = 0;
+    }
+
+    pub fn clear_search(&mut self) {
+        self.search_query.clear();
+        self.search_active = false;
+        self.filtered_blip_indices.clear();
+        self.filtered_adr_indices.clear();
+        self.search_result_index = 0;
+        self.search_throbber_state = throbber_widgets_tui::ThrobberState::default();
+        self.selected_blip_index = 0;
+        self.selected_adr_index = 0;
     }
 
     pub async fn generate_file(&mut self) -> Result<PathBuf> {
@@ -812,6 +925,7 @@ impl App {
 
     pub async fn fetch_blips(&mut self) -> Result<()> {
         self.blips = self.actions.fetch_blips().await?;
+        self.apply_search_filter();
         Ok(())
     }
 
@@ -822,6 +936,7 @@ impl App {
         } else {
             Some(blip_name.to_string())
         };
+        self.apply_search_filter();
         Ok(())
     }
 

@@ -8,7 +8,14 @@ use ratatui::Frame;
 pub fn render_adr_details(app: &App, f: &mut Frame<'_>) {
     let area = f.area();
 
-    let Some(adr) = app.adrs.get(app.selected_adr_index) else {
+    let adr = if app.filtered_adr_indices.is_empty() {
+        app.adrs.get(app.selected_adr_index)
+    } else {
+        app.filtered_adr_indices
+            .get(app.selected_adr_index)
+            .and_then(|index| app.adrs.get(*index))
+    };
+    let Some(adr) = adr else {
         return;
     };
 

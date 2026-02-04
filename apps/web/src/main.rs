@@ -37,7 +37,7 @@ struct RadarBlip {
     adr_id: Option<i32>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Clone)]
 #[allow(dead_code)]
 struct RadarAdr {
     id: i32,
@@ -53,6 +53,39 @@ struct AnimationState {
     paused: bool,
 }
 
+#[derive(Clone)]
+struct SearchState {
+    query: String,
+    active: bool,
+    column: SearchColumn,
+    row: usize,
+    detail_open: bool,
+}
+
+struct DashboardState {
+    tab_index: usize,
+    row_offset: usize,
+    animation_counter: f64,
+    animation_paused: bool,
+    search_state: SearchState,
+}
+
+impl SearchState {
+    fn reset(&mut self) {
+        self.query.clear();
+        self.active = false;
+        self.column = SearchColumn::Blips;
+        self.row = 0;
+        self.detail_open = false;
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SearchColumn {
+    Blips,
+    Adrs,
+}
+
 fn main() -> io::Result<()> {
     let data = Rc::new(RefCell::new(None::<RadarExport>));
     let tab_index = Rc::new(RefCell::new(0_usize));
@@ -61,6 +94,13 @@ fn main() -> io::Result<()> {
         counter: 0.0,
         last_tick: 0.0,
         paused: false,
+    }));
+    let search_state = Rc::new(RefCell::new(SearchState {
+        query: String::new(),
+        active: false,
+        column: SearchColumn::Blips,
+        row: 0,
+        detail_open: false,
     }));
 
     spawn_local(fetch_radar(data.clone()));
@@ -72,42 +112,58 @@ fn main() -> io::Result<()> {
         let tab_index = tab_index.clone();
         let row_offset = row_offset.clone();
         let animation_state = animation_state.clone();
-        move |event| match event.code {
-            ratzilla::event::KeyCode::Left => {
-                let mut index = tab_index.borrow_mut();
-                *index = if *index == 0 { 2 } else { *index - 1 };
-                *row_offset.borrow_mut() = 0;
+        let search_state = search_state.clone();
+        move |event| {
+            if search_state.borrow().active {
+                handle_search_input(&search_state, event.code);
+                return;
             }
-            ratzilla::event::KeyCode::Right => {
-                let mut index = tab_index.borrow_mut();
-                *index = (*index + 1) % 3;
-                *row_offset.borrow_mut() = 0;
+
+            match event.code {
+                ratzilla::event::KeyCode::Left => {
+                    let mut index = tab_index.borrow_mut();
+                    *index = if *index == 0 { 2 } else { *index - 1 };
+                    *row_offset.borrow_mut() = 0;
+                }
+                ratzilla::event::KeyCode::Right => {
+                    let mut index = tab_index.borrow_mut();
+                    *index = (*index + 1) % 3;
+                    *row_offset.borrow_mut() = 0;
+                }
+                ratzilla::event::KeyCode::Up => {
+                    let mut offset = row_offset.borrow_mut();
+                    *offset = offset.saturating_sub(1);
+                }
+                ratzilla::event::KeyCode::Down => {
+                    let mut offset = row_offset.borrow_mut();
+                    *offset = (*offset + 1).min(2000);
+                }
+                ratzilla::event::KeyCode::Char(' ') => {
+                    let mut state = animation_state.borrow_mut();
+                    state.paused = !state.paused;
+                }
+                ratzilla::event::KeyCode::Char('s') => {
+                    let mut state = search_state.borrow_mut();
+                    state.active = true;
+                    state.query.clear();
+                    state.column = SearchColumn::Blips;
+                    state.row = 0;
+                    state.detail_open = false;
+                }
+                ratzilla::event::KeyCode::Char('1') => {
+                    *tab_index.borrow_mut() = 0;
+                    *row_offset.borrow_mut() = 0;
+                }
+                ratzilla::event::KeyCode::Char('2') => {
+                    *tab_index.borrow_mut() = 1;
+                    *row_offset.borrow_mut() = 0;
+                }
+                ratzilla::event::KeyCode::Char('3') => {
+                    *tab_index.borrow_mut() = 2;
+                    *row_offset.borrow_mut() = 0;
+                }
+                _ => {}
             }
-            ratzilla::event::KeyCode::Up => {
-                let mut offset = row_offset.borrow_mut();
-                *offset = offset.saturating_sub(1);
-            }
-            ratzilla::event::KeyCode::Down => {
-                let mut offset = row_offset.borrow_mut();
-                *offset = (*offset + 1).min(2000);
-            }
-            ratzilla::event::KeyCode::Char(' ') => {
-                let mut state = animation_state.borrow_mut();
-                state.paused = !state.paused;
-            }
-            ratzilla::event::KeyCode::Char('1') => {
-                *tab_index.borrow_mut() = 0;
-                *row_offset.borrow_mut() = 0;
-            }
-            ratzilla::event::KeyCode::Char('2') => {
-                *tab_index.borrow_mut() = 1;
-                *row_offset.borrow_mut() = 0;
-            }
-            ratzilla::event::KeyCode::Char('3') => {
-                *tab_index.borrow_mut() = 2;
-                *row_offset.borrow_mut() = 0;
-            }
-            _ => {}
         }
     });
 
@@ -142,17 +198,31 @@ fn main() -> io::Result<()> {
 
         let data = data.borrow();
         if let Some(export) = data.as_ref() {
-            let index = *tab_index.borrow();
-            let row_offset = *row_offset.borrow();
-            render_dashboard(
-                export,
-                index,
-                row_offset,
-                animation.counter,
-                animation.paused,
-                f,
-                inner,
-            );
+            let state = DashboardState {
+                tab_index: *tab_index.borrow(),
+                row_offset: *row_offset.borrow(),
+                animation_counter: animation.counter,
+                animation_paused: animation.paused,
+                search_state: search_state.borrow().clone(),
+            };
+
+            render_dashboard(export, &state, f, inner);
+
+            if state.search_state.active {
+                // Clear entire area behind popup to create solid modal overlay
+                let overlay_bg = Style::default().fg(Color::White).bg(Color::Black);
+                let overlay: Vec<TextLine> = (0..inner.height)
+                    .map(|_| {
+                        TextLine::from(Span::styled(" ".repeat(inner.width as usize), overlay_bg))
+                    })
+                    .collect();
+                f.render_widget(Paragraph::new(Text::from(overlay)), inner);
+
+                render_search_popup(export, &state.search_state, f, inner);
+                if state.search_state.detail_open {
+                    render_search_detail_popup(export, &state.search_state, f, inner);
+                }
+            }
         } else {
             let paragraph = Paragraph::new(Text::from(TextLine::from("Loading radar.json...")))
                 .alignment(Alignment::Center);
@@ -165,24 +235,21 @@ fn main() -> io::Result<()> {
 
 fn render_dashboard(
     export: &RadarExport,
-    tab_index: usize,
-    row_offset: usize,
-    animation_counter: f64,
-    animation_paused: bool,
+    state: &DashboardState,
     f: &mut ratzilla::ratatui::Frame<'_>,
     area: Rect,
 ) {
     let main_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
+            Constraint::Length(4),
             Constraint::Length(1),
             Constraint::Min(12),
             Constraint::Length(8),
         ])
         .split(area);
 
-    render_header(export, f, main_layout[0]);
+    render_header(export, &state.search_state, f, main_layout[0]);
     render_gap(f, main_layout[1]);
 
     let content = Layout::default()
@@ -190,7 +257,7 @@ fn render_dashboard(
         .constraints([Constraint::Percentage(58), Constraint::Percentage(42)])
         .split(main_layout[2]);
 
-    render_radar_panel(export, animation_counter, f, content[0]);
+    render_radar_panel(export, state.animation_counter, f, content[0]);
 
     let charts = Layout::default()
         .direction(Direction::Vertical)
@@ -202,15 +269,20 @@ fn render_dashboard(
 
     render_footer(
         export,
-        tab_index,
-        row_offset,
-        animation_paused,
+        state.tab_index,
+        state.row_offset,
+        state.animation_paused,
         f,
         main_layout[3],
     );
 }
 
-fn render_header(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>, area: Rect) {
+fn render_header(
+    export: &RadarExport,
+    search_state: &SearchState,
+    f: &mut ratzilla::ratatui::Frame<'_>,
+    area: Rect,
+) {
     let total_blips = export.blips.len();
     let total_adrs = export.adrs.len();
 
@@ -223,13 +295,432 @@ fn render_header(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>, are
         .title("Overview")
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
+    f.render_widget(block, area);
 
-    let paragraph = Paragraph::new(Text::from(line))
-        .block(block)
-        .alignment(Alignment::Left)
+    let inner = area.inner(Margin::new(1, 1));
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Length(1)])
+        .split(inner);
+
+    let hint = Paragraph::new(Text::from(TextLine::from(Span::styled(
+        "Press s to search",
+        Style::default().fg(Color::Gray),
+    ))));
+    f.render_widget(hint, rows[1]);
+
+    let paragraph = Paragraph::new(Text::from(line)).alignment(Alignment::Left);
+    f.render_widget(paragraph, rows[0]);
+
+    if search_state.active {
+        let search_text = format!("Search: {}", search_state.query);
+        let search_line = TextLine::from(Span::styled(
+            search_text,
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ));
+        f.render_widget(Paragraph::new(Text::from(search_line)), rows[1]);
+    }
+}
+
+fn handle_search_input(state: &Rc<RefCell<SearchState>>, key: ratzilla::event::KeyCode) {
+    let mut search_state = state.borrow_mut();
+    match key {
+        ratzilla::event::KeyCode::Esc => {
+            if search_state.detail_open {
+                search_state.detail_open = false;
+            } else {
+                search_state.reset();
+            }
+        }
+        ratzilla::event::KeyCode::Enter => {
+            search_state.detail_open = !search_state.detail_open;
+        }
+        ratzilla::event::KeyCode::Left => {
+            if !search_state.detail_open {
+                search_state.column = SearchColumn::Blips;
+                search_state.row = 0;
+            }
+        }
+        ratzilla::event::KeyCode::Right => {
+            if !search_state.detail_open {
+                search_state.column = SearchColumn::Adrs;
+                search_state.row = 0;
+            }
+        }
+        ratzilla::event::KeyCode::Up => {
+            if !search_state.detail_open {
+                search_state.row = search_state.row.saturating_sub(1);
+            }
+        }
+        ratzilla::event::KeyCode::Down => {
+            if !search_state.detail_open {
+                search_state.row = search_state.row.saturating_add(1);
+            }
+        }
+        ratzilla::event::KeyCode::Backspace => {
+            if !search_state.detail_open {
+                search_state.query.pop();
+                search_state.row = 0;
+            }
+        }
+        ratzilla::event::KeyCode::Char(ch) => {
+            if !search_state.detail_open {
+                search_state.query.push(ch);
+                search_state.row = 0;
+            }
+        }
+        _ => {}
+    }
+}
+
+fn render_search_popup(
+    export: &RadarExport,
+    search_state: &SearchState,
+    f: &mut ratzilla::ratatui::Frame<'_>,
+    area: Rect,
+) {
+    let popup_area = Rect {
+        x: area
+            .x
+            .saturating_add(area.width / 2)
+            .saturating_sub(area.width / 3),
+        y: area
+            .y
+            .saturating_add(area.height / 2)
+            .saturating_sub(area.height / 3),
+        width: area.width.saturating_mul(2) / 3,
+        height: area.height.saturating_mul(2) / 3,
+    };
+
+    let bg = Style::default().fg(Color::White).bg(Color::Black);
+
+    // Fill popup area with spaces to clear radar canvas characters underneath
+    let clear_lines: Vec<TextLine> = (0..popup_area.height)
+        .map(|_| TextLine::from(Span::styled(" ".repeat(popup_area.width as usize), bg)))
+        .collect();
+    f.render_widget(Paragraph::new(Text::from(clear_lines)), popup_area);
+
+    let block = Block::default()
+        .title("Search Results")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow))
+        .style(bg);
+    f.render_widget(block, popup_area);
+
+    let inner = popup_area.inner(Margin::new(1, 1));
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(2),
+            Constraint::Min(5),
+            Constraint::Length(2),
+        ])
+        .split(inner);
+
+    let query_line = TextLine::from(vec![
+        Span::styled("Query: ", Style::default().fg(Color::Gray)),
+        Span::styled(
+            search_state.query.as_str(),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]);
+    f.render_widget(Paragraph::new(Text::from(query_line)).style(bg), layout[0]);
+
+    let columns = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(layout[1]);
+
+    let blip_matches = filter_blips(export, search_state);
+    let adr_matches = filter_adrs(export, search_state);
+
+    let max_rows = layout[1].height.saturating_sub(1) as usize;
+    let max_rows = max_rows.max(1);
+    let max_blip_row = blip_matches.len().min(max_rows).saturating_sub(1);
+    let max_adr_row = adr_matches.len().min(max_rows).saturating_sub(1);
+
+    let blip_row = if blip_matches.is_empty() {
+        0
+    } else {
+        search_state.row.min(max_blip_row)
+    };
+    let adr_row = if adr_matches.is_empty() {
+        0
+    } else {
+        search_state.row.min(max_adr_row)
+    };
+
+    render_search_blip_column(
+        "Blips",
+        &blip_matches,
+        blip_row,
+        search_state.column == SearchColumn::Blips,
+        f,
+        columns[0],
+    );
+
+    render_search_adr_column(
+        "ADRs",
+        &adr_matches,
+        adr_row,
+        search_state.column == SearchColumn::Adrs,
+        f,
+        columns[1],
+    );
+
+    let hint = TextLine::from(vec![
+        Span::styled("↑/↓", Style::default().fg(Color::Yellow)),
+        Span::raw(": Navigate   "),
+        Span::styled("←/→", Style::default().fg(Color::Yellow)),
+        Span::raw(": Column   "),
+        Span::styled("Enter", Style::default().fg(Color::Yellow)),
+        Span::raw(": Close"),
+    ]);
+    f.render_widget(
+        Paragraph::new(Text::from(hint))
+            .alignment(Alignment::Center)
+            .style(bg),
+        layout[2],
+    );
+}
+
+fn filter_blips(export: &RadarExport, search_state: &SearchState) -> Vec<RadarBlip> {
+    let query = search_state.query.trim().to_lowercase();
+    if query.is_empty() {
+        return export.blips.clone();
+    }
+
+    export
+        .blips
+        .iter()
+        .filter(|blip| {
+            let mut haystack = blip.name.to_lowercase();
+            if let Some(tag) = &blip.tag {
+                haystack.push(' ');
+                haystack.push_str(&tag.to_lowercase());
+            }
+            if let Some(description) = &blip.description {
+                haystack.push(' ');
+                haystack.push_str(&description.to_lowercase());
+            }
+            if let Some(ring) = &blip.ring {
+                haystack.push(' ');
+                haystack.push_str(&ring.to_lowercase());
+            }
+            if let Some(quadrant) = &blip.quadrant {
+                haystack.push(' ');
+                haystack.push_str(&quadrant.to_lowercase());
+            }
+            haystack.contains(&query)
+        })
+        .cloned()
+        .collect()
+}
+
+fn filter_adrs(export: &RadarExport, search_state: &SearchState) -> Vec<RadarAdr> {
+    let query = search_state.query.trim().to_lowercase();
+    if query.is_empty() {
+        return export.adrs.clone();
+    }
+
+    export
+        .adrs
+        .iter()
+        .filter(|adr| {
+            let mut haystack = adr.title.to_lowercase();
+            haystack.push(' ');
+            haystack.push_str(&adr.blip_name.to_lowercase());
+            haystack.push(' ');
+            haystack.push_str(&adr.status.to_lowercase());
+            haystack.push(' ');
+            haystack.push_str(&adr.timestamp.to_lowercase());
+            haystack.contains(&query)
+        })
+        .cloned()
+        .collect()
+}
+
+fn render_search_blip_column(
+    title: &str,
+    rows: &[RadarBlip],
+    selected_row: usize,
+    is_active: bool,
+    f: &mut ratzilla::ratatui::Frame<'_>,
+    area: Rect,
+) {
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Gray))
+        .style(Style::default().bg(Color::Black));
+    f.render_widget(block, area);
+
+    let inner = area.inner(Margin::new(1, 1));
+    if inner.height == 0 {
+        return;
+    }
+
+    let max_rows = inner.height as usize;
+    let rows = rows.iter().take(max_rows).enumerate().map(|(index, item)| {
+        let is_selected = is_active && selected_row == index;
+        let style = if is_selected {
+            Style::default().fg(Color::Black).bg(Color::Yellow)
+        } else {
+            Style::default().fg(Color::White).bg(Color::Black)
+        };
+        TextLine::from(Span::styled(item.name.clone(), style))
+    });
+
+    let bg = Style::default().fg(Color::White).bg(Color::Black);
+    f.render_widget(Paragraph::new(Text::from_iter(rows)).style(bg), inner);
+}
+
+fn render_search_adr_column(
+    title: &str,
+    rows: &[RadarAdr],
+    selected_row: usize,
+    is_active: bool,
+    f: &mut ratzilla::ratatui::Frame<'_>,
+    area: Rect,
+) {
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Gray))
+        .style(Style::default().bg(Color::Black));
+    f.render_widget(block, area);
+
+    let inner = area.inner(Margin::new(1, 1));
+    if inner.height == 0 {
+        return;
+    }
+
+    let max_rows = inner.height as usize;
+    let rows = rows.iter().take(max_rows).enumerate().map(|(index, item)| {
+        let is_selected = is_active && selected_row == index;
+        let style = if is_selected {
+            Style::default().fg(Color::Black).bg(Color::Yellow)
+        } else {
+            Style::default().fg(Color::White).bg(Color::Black)
+        };
+        TextLine::from(Span::styled(item.title.clone(), style))
+    });
+
+    let bg = Style::default().fg(Color::White).bg(Color::Black);
+    f.render_widget(Paragraph::new(Text::from_iter(rows)).style(bg), inner);
+}
+
+fn render_search_detail_popup(
+    export: &RadarExport,
+    search_state: &SearchState,
+    f: &mut ratzilla::ratatui::Frame<'_>,
+    area: Rect,
+) {
+    let popup_area = Rect {
+        x: area
+            .x
+            .saturating_add(area.width / 2)
+            .saturating_sub(area.width / 4),
+        y: area
+            .y
+            .saturating_add(area.height / 2)
+            .saturating_sub(area.height / 4),
+        width: area.width / 2,
+        height: area.height / 2,
+    };
+
+    let bg = Style::default().fg(Color::White).bg(Color::Black);
+
+    // Fill popup area with spaces to clear canvas characters underneath
+    let clear_lines: Vec<TextLine> = (0..popup_area.height)
+        .map(|_| TextLine::from(Span::styled(" ".repeat(popup_area.width as usize), bg)))
+        .collect();
+    f.render_widget(Paragraph::new(Text::from(clear_lines)), popup_area);
+
+    let block = Block::default()
+        .title("Details")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .style(bg);
+    f.render_widget(block, popup_area);
+
+    let inner = popup_area.inner(Margin::new(1, 1));
+
+    let lines = match search_state.column {
+        SearchColumn::Blips => build_blip_detail_lines(export, search_state),
+        SearchColumn::Adrs => build_adr_detail_lines(export, search_state),
+    };
+
+    let content = Paragraph::new(Text::from(lines))
+        .style(Style::default().bg(Color::Black))
         .wrap(Wrap { trim: true });
+    f.render_widget(content, inner);
+}
 
-    f.render_widget(paragraph, area);
+fn build_blip_detail_lines<'a>(
+    export: &'a RadarExport,
+    search_state: &'a SearchState,
+) -> Vec<TextLine<'a>> {
+    let blip_matches = filter_blips(export, search_state);
+    let Some(blip) = blip_matches.get(search_state.row) else {
+        return vec![TextLine::from("No blip selected")];
+    };
+
+    vec![
+        TextLine::from(Span::styled(
+            blip.name.clone(),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )),
+        TextLine::from(""),
+        TextLine::from(format!(
+            "Quadrant: {}",
+            blip.quadrant
+                .clone()
+                .unwrap_or_else(|| "(none)".to_string())
+        )),
+        TextLine::from(format!(
+            "Ring: {}",
+            blip.ring.clone().unwrap_or_else(|| "(none)".to_string())
+        )),
+        TextLine::from(format!(
+            "Tag: {}",
+            blip.tag.clone().unwrap_or_else(|| "(none)".to_string())
+        )),
+        TextLine::from(format!(
+            "Has ADR: {}",
+            if blip.has_adr { "Yes" } else { "No" }
+        )),
+        TextLine::from(format!("Created: {}", blip.created)),
+    ]
+}
+
+fn build_adr_detail_lines<'a>(
+    export: &'a RadarExport,
+    search_state: &'a SearchState,
+) -> Vec<TextLine<'a>> {
+    let adr_matches = filter_adrs(export, search_state);
+    let Some(adr) = adr_matches.get(search_state.row) else {
+        return vec![TextLine::from("No ADR selected")];
+    };
+
+    vec![
+        TextLine::from(Span::styled(
+            adr.title.clone(),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )),
+        TextLine::from(""),
+        TextLine::from(format!("Blip: {}", adr.blip_name)),
+        TextLine::from(format!("Status: {}", adr.status)),
+        TextLine::from(format!("Date: {}", adr.timestamp)),
+    ]
 }
 
 fn render_gap(f: &mut ratzilla::ratatui::Frame<'_>, area: Rect) {
@@ -478,7 +969,9 @@ fn render_blip_type_chart(export: &RadarExport, f: &mut ratzilla::ratatui::Frame
     let block = Block::default()
         .title("Blip Types")
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Gray));
+        .border_style(Style::default().fg(Color::Gray))
+        .style(Style::default().bg(Color::Black));
+
     let inner = block.inner(area);
     f.render_widget(block, area);
 

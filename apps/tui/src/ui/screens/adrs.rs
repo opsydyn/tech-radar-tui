@@ -23,9 +23,20 @@ pub fn render_adrs_view(app: &App, f: &mut Frame<'_>) {
     let popup_area = centered_rect(90, 80, area);
     f.render_widget(ClearWidget, popup_area);
 
-    if app.adrs.is_empty() {
+    let active_indices = if app.filtered_adr_indices.is_empty() {
+        (0..app.adrs.len()).collect::<Vec<_>>()
+    } else {
+        app.filtered_adr_indices.clone()
+    };
+
+    if active_indices.is_empty() {
+        let title = if app.search_active || !app.search_query.is_empty() {
+            "ADR Table (0 results)"
+        } else {
+            "ADR Table"
+        };
         let block = Block::default()
-            .title("ADR Table")
+            .title(title)
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Yellow));
         let paragraph = Paragraph::new("No ADRs found.")
@@ -48,12 +59,16 @@ pub fn render_adrs_view(app: &App, f: &mut Frame<'_>) {
             .add_modifier(Modifier::BOLD),
     );
 
-    let total_rows = app.adrs.len();
+    let total_rows = active_indices.len();
     let max_visible_rows = area.height.saturating_sub(7) as usize;
 
     let scroll_offset = scroll_offset(total_rows, max_visible_rows, app.selected_adr_index);
 
-    let visible_adrs = app.adrs.iter().skip(scroll_offset).take(max_visible_rows);
+    let visible_adrs = active_indices
+        .iter()
+        .skip(scroll_offset)
+        .take(max_visible_rows)
+        .filter_map(|index| app.adrs.get(*index));
 
     let rows = visible_adrs.enumerate().map(|(i, adr)| {
         let is_selected = i + scroll_offset == app.selected_adr_index;
@@ -75,7 +90,7 @@ pub fn render_adrs_view(app: &App, f: &mut Frame<'_>) {
         .style(style)
     });
 
-    let title = app.adr_filter_name.as_ref().map_or_else(
+    let base_title = app.adr_filter_name.as_ref().map_or_else(
         || format!("ADR Log ({} of {})", app.selected_adr_index + 1, total_rows),
         |filter| {
             format!(
@@ -86,6 +101,11 @@ pub fn render_adrs_view(app: &App, f: &mut Frame<'_>) {
             )
         },
     );
+    let title = if app.search_active || !app.search_query.is_empty() {
+        format!("{base_title} • Filtered")
+    } else {
+        base_title
+    };
 
     let widths = [
         Constraint::Length(4),
@@ -128,7 +148,14 @@ pub fn render_adrs_view(app: &App, f: &mut Frame<'_>) {
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::raw(": Actions"),
+        Span::raw(": Actions   "),
+        Span::styled(
+            "s",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(": Search"),
     ];
 
     let help_paragraph = Paragraph::new(TextLine::from(help_text))

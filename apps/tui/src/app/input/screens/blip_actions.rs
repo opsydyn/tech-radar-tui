@@ -3,6 +3,30 @@ use crate::app::state::{App, AppScreen, InputMode, InputState};
 use crossterm::event::KeyCode;
 
 pub async fn handle_blip_actions_input(app: &mut App, key: KeyCode) {
+    if app.search_active {
+        match key {
+            KeyCode::Esc => {
+                app.clear_search();
+                app.screen = AppScreen::ViewBlips;
+            }
+            KeyCode::Char(ch) => {
+                app.search_query.push(ch);
+                app.apply_search_filter();
+            }
+            KeyCode::Backspace => {
+                app.search_query.pop();
+                app.apply_search_filter();
+            }
+            KeyCode::Enter => {
+                app.search_active = false;
+                app.apply_search_filter();
+                app.status_message = "Search applied".to_string();
+            }
+            _ => {}
+        }
+        return;
+    }
+
     match key {
         KeyCode::Up => {
             app.blip_action_index = wrap_decrement(app.blip_action_index, 4);
@@ -18,7 +42,14 @@ pub async fn handle_blip_actions_input(app: &mut App, key: KeyCode) {
                 handle_adr_action(app).await;
             }
             2 => {
-                if let Some(blip) = app.blips.get(app.selected_blip_index) {
+                let blip = if app.filtered_blip_indices.is_empty() {
+                    app.blips.get(app.selected_blip_index)
+                } else {
+                    app.filtered_blip_indices
+                        .get(app.selected_blip_index)
+                        .and_then(|index| app.blips.get(*index))
+                };
+                if let Some(blip) = blip {
                     app.edit_blip_state = Some(crate::app::state::EditBlipState::from_blip(blip));
                     app.screen = AppScreen::EditBlip;
                 }
@@ -35,7 +66,14 @@ pub async fn handle_blip_actions_input(app: &mut App, key: KeyCode) {
 }
 
 async fn handle_adr_action(app: &mut App) {
-    let Some(blip) = app.blips.get(app.selected_blip_index) else {
+    let blip = if app.filtered_blip_indices.is_empty() {
+        app.blips.get(app.selected_blip_index)
+    } else {
+        app.filtered_blip_indices
+            .get(app.selected_blip_index)
+            .and_then(|index| app.blips.get(*index))
+    };
+    let Some(blip) = blip else {
         app.screen = AppScreen::ViewBlips;
         return;
     };

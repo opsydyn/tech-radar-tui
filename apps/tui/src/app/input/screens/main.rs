@@ -2,6 +2,7 @@ use crate::app::input::helpers::{wrap_decrement, wrap_increment};
 use crate::app::state::{AdrStatus, App, AppScreen, InputMode, InputState};
 use crate::db::queries::blip_exists_by_name;
 use crossterm::event::KeyCode;
+use throbber_widgets_tui::ThrobberState;
 
 pub async fn handle_main_input(app: &mut App, key: KeyCode) {
     match app.input_state {
@@ -56,13 +57,47 @@ async fn handle_mode_selection(app: &mut App, key: KeyCode) {
     }
 }
 
+pub fn start_search(app: &mut App) {
+    app.search_active = true;
+    app.search_query.clear();
+    app.filtered_blip_indices.clear();
+    app.filtered_adr_indices.clear();
+    app.search_result_index = 0;
+    app.search_throbber_state = ThrobberState::default();
+    app.selected_blip_index = 0;
+    app.selected_adr_index = 0;
+    if app.adrs.is_empty() {
+        app.status_message = "Search: no ADRs loaded (press v)".to_string();
+    } else {
+        app.status_message = "Search: type to filter, Enter to apply, Esc to clear".to_string();
+    }
+}
+
 async fn handle_text_input(app: &mut App, key: KeyCode) {
     match key {
-        KeyCode::Char(c) => app.current_input.push(c),
+        KeyCode::Char(c) => {
+            if app.search_active {
+                app.search_query.push(c);
+                app.apply_search_filter();
+            } else {
+                app.current_input.push(c);
+            }
+        }
         KeyCode::Backspace => {
-            app.current_input.pop();
+            if app.search_active {
+                app.search_query.pop();
+                app.apply_search_filter();
+            } else {
+                app.current_input.pop();
+            }
         }
         KeyCode::Enter => {
+            if app.search_active {
+                app.apply_search_filter();
+                app.search_active = false;
+                app.status_message = "Search applied".to_string();
+                return;
+            }
             app.process_current_input();
 
             if app.input_mode == Some(InputMode::Blip) {
@@ -166,6 +201,15 @@ async fn handle_completion_input(app: &mut App, key: KeyCode) {
     }
 }
 
+fn handle_search_escape(app: &mut App) -> bool {
+    if app.search_active {
+        app.clear_search();
+        app.status_message = "Search cleared".to_string();
+        return true;
+    }
+    false
+}
+
 fn handle_adr_status_selection(app: &mut App, key: KeyCode) {
     let max_statuses = 5;
     match key {
@@ -181,9 +225,10 @@ fn handle_adr_status_selection(app: &mut App, key: KeyCode) {
             app.process_current_input();
             app.advance_state();
         }
-
         KeyCode::Esc => {
-            app.reset();
+            if !handle_search_escape(app) {
+                app.reset();
+            }
         }
         _ => {}
     }

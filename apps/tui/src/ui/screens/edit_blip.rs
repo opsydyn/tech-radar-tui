@@ -11,9 +11,15 @@ use std::time::Instant;
 pub fn render_edit_blip(app: &App, f: &mut Frame<'_>) {
     let area = f.area();
 
-    if let (Some(selected_blip), Some(edit_state)) =
-        (app.blips.get(app.selected_blip_index), &app.edit_blip_state)
-    {
+    let selected_blip = if app.filtered_blip_indices.is_empty() {
+        app.blips.get(app.selected_blip_index)
+    } else {
+        app.filtered_blip_indices
+            .get(app.selected_blip_index)
+            .and_then(|index| app.blips.get(*index))
+    };
+
+    if let (Some(selected_blip), Some(edit_state)) = (selected_blip, &app.edit_blip_state) {
         let form_area = centered_rect(70, 70, area);
         f.render_widget(ClearWidget, form_area);
 

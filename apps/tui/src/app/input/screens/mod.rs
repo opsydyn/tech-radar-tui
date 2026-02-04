@@ -31,6 +31,19 @@ pub async fn dispatch_input(app: &mut App, key: KeyCode) -> color_eyre::Result<(
         return Ok(());
     }
 
+    if app.search_active {
+        handle_global_search_input(app, key);
+        return Ok(());
+    }
+
+    if key == KeyCode::Char('s') {
+        if let Err(error) = app.ensure_adrs_loaded().await {
+            app.status_message = format!("Search failed to load ADRs: {error}");
+        }
+        main::start_search(app);
+        return Ok(());
+    }
+
     match app.screen {
         AppScreen::ViewBlips => blips::handle_view_blips_input(app, key),
         AppScreen::BlipActions => blip_actions::handle_blip_actions_input(app, key).await,
@@ -101,4 +114,83 @@ fn apply_settings_value(app: &mut App) {
         _ => {}
     }
     app.apply_settings_runtime();
+}
+
+fn handle_global_search_input(app: &mut App, key: KeyCode) {
+    match key {
+        KeyCode::Esc => {
+            app.clear_search();
+            app.status_message = "Search cleared".to_string();
+        }
+        KeyCode::Up => {
+            if app.search_result_index > 0 {
+                app.search_result_index -= 1;
+            }
+        }
+        KeyCode::Down => {
+            let total_results = app.filtered_blip_indices.len() + app.filtered_adr_indices.len();
+            if total_results > 0 && app.search_result_index + 1 < total_results {
+                app.search_result_index += 1;
+            }
+        }
+        KeyCode::Left => {
+            let blip_count = app.filtered_blip_indices.len();
+            if blip_count == 0 {
+                return;
+            }
+            let row = if app.search_result_index < blip_count {
+                app.search_result_index
+            } else {
+                app.search_result_index.saturating_sub(blip_count)
+            };
+            app.search_result_index = row.min(blip_count.saturating_sub(1));
+        }
+        KeyCode::Right => {
+            let blip_count = app.filtered_blip_indices.len();
+            let adr_count = app.filtered_adr_indices.len();
+            if adr_count == 0 {
+                return;
+            }
+            let row = if app.search_result_index < blip_count {
+                app.search_result_index
+            } else {
+                app.search_result_index.saturating_sub(blip_count)
+            };
+            app.search_result_index = blip_count + row.min(adr_count.saturating_sub(1));
+        }
+        KeyCode::Enter => {
+            let total_results = app.filtered_blip_indices.len() + app.filtered_adr_indices.len();
+            if total_results == 0 {
+                app.search_active = false;
+                app.status_message = "Search applied".to_string();
+                return;
+            }
+
+            if app.search_result_index < app.filtered_blip_indices.len() {
+                app.selected_blip_index = app.search_result_index;
+                app.screen = AppScreen::BlipActions;
+            } else {
+                let adr_index = app
+                    .search_result_index
+                    .saturating_sub(app.filtered_blip_indices.len());
+                if adr_index < app.filtered_adr_indices.len() {
+                    app.selected_adr_index = adr_index;
+                    app.adr_action_index = 0;
+                    app.screen = AppScreen::AdrActions;
+                }
+            }
+
+            app.search_active = false;
+            app.status_message = "Search applied".to_string();
+        }
+        KeyCode::Backspace => {
+            app.search_query.pop();
+            app.apply_search_filter();
+        }
+        KeyCode::Char(ch) => {
+            app.search_query.push(ch);
+            app.apply_search_filter();
+        }
+        _ => {}
+    }
 }
