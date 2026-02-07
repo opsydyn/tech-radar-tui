@@ -13,6 +13,8 @@
 
 Keyboard-driven terminal UI for creating Architectural Decision Records (ADRs) and Tech Radar blips with quadrant/ring metadata, radar visualization, and quick navigation.
 
+ > 'Technology Governance in the terminal for teams'
+
 ## Features
 
 ![Tech Radar TUI](tech-radar.png)
