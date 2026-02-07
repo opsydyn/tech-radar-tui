@@ -9,9 +9,21 @@ permissions:
   contents: write
 
 jobs:
+  create-draft-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          draft: true
+          generate_release_notes: true
+
   build-release:
+    needs: create-draft-release
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -84,7 +96,28 @@ jobs:
           New-Item -ItemType Directory -Path dist -Force | Out-Null
           Copy-Item "target/release/${{ matrix.bin }}" "dist/${{ matrix.artifact }}"
 
-      - name: Create release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/${{ matrix.artifact }}
+      - name: Upload asset to draft release (non-Windows)
+        if: matrix.os != 'windows-latest'
+        run: gh release upload "${{ github.ref_name }}" "dist/${{ matrix.artifact }}" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload asset to draft release (Windows)
+        if: matrix.os == 'windows-latest'
+        run: gh release upload "${{ github.ref_name }}" "dist/${{ matrix.artifact }}" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-release:
+    needs: build-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish release
+        run: gh release edit "${{ github.ref_name }}" --draft=false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify release is published
+        run: gh release view "${{ github.ref_name }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
