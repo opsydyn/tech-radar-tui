@@ -62,9 +62,25 @@ struct SearchState {
     detail_open: bool,
 }
 
+#[derive(Clone, Copy)]
+enum TableDetailKind {
+    RecentBlip,
+    AllBlip,
+    Adr,
+}
+
+#[derive(Clone, Copy)]
+struct TableDetailState {
+    active: bool,
+    kind: TableDetailKind,
+    row: usize,
+}
+
 struct DashboardState {
     tab_index: usize,
     row_offset: usize,
+    table_selected_row: usize,
+    table_detail: TableDetailState,
     animation_counter: f64,
     animation_paused: bool,
     search_state: SearchState,
@@ -90,6 +106,8 @@ fn main() -> io::Result<()> {
     let data = Rc::new(RefCell::new(None::<RadarExport>));
     let tab_index = Rc::new(RefCell::new(0_usize));
     let row_offset = Rc::new(RefCell::new(0_usize));
+    let table_selected_row = Rc::new(RefCell::new(0_usize));
+    let table_view_rows = Rc::new(RefCell::new(1_usize));
     let animation_state = Rc::new(RefCell::new(AnimationState {
         counter: 0.0,
         last_tick: 0.0,
@@ -102,6 +120,11 @@ fn main() -> io::Result<()> {
         row: 0,
         detail_open: false,
     }));
+    let table_detail_state = Rc::new(RefCell::new(TableDetailState {
+        active: false,
+        kind: TableDetailKind::AllBlip,
+        row: 0,
+    }));
 
     spawn_local(fetch_radar(data.clone()));
 
@@ -111,11 +134,25 @@ fn main() -> io::Result<()> {
     terminal.on_key_event({
         let tab_index = tab_index.clone();
         let row_offset = row_offset.clone();
+        let table_selected_row = table_selected_row.clone();
+        let table_view_rows = table_view_rows.clone();
         let animation_state = animation_state.clone();
         let search_state = search_state.clone();
+        let table_detail_state = table_detail_state.clone();
+        let data = data.clone();
         move |event| {
             if search_state.borrow().active {
                 handle_search_input(&search_state, event.code);
+                return;
+            }
+
+            if table_detail_state.borrow().active {
+                match event.code {
+                    ratzilla::event::KeyCode::Esc | ratzilla::event::KeyCode::Enter => {
+                        table_detail_state.borrow_mut().active = false;
+                    }
+                    _ => {}
+                }
                 return;
             }
 
@@ -124,19 +161,73 @@ fn main() -> io::Result<()> {
                     let mut index = tab_index.borrow_mut();
                     *index = if *index == 0 { 2 } else { *index - 1 };
                     *row_offset.borrow_mut() = 0;
+                    *table_selected_row.borrow_mut() = 0;
+                    table_detail_state.borrow_mut().active = false;
                 }
                 ratzilla::event::KeyCode::Right => {
                     let mut index = tab_index.borrow_mut();
                     *index = (*index + 1) % 3;
                     *row_offset.borrow_mut() = 0;
+                    *table_selected_row.borrow_mut() = 0;
+                    table_detail_state.borrow_mut().active = false;
                 }
                 ratzilla::event::KeyCode::Up => {
-                    let mut offset = row_offset.borrow_mut();
-                    *offset = offset.saturating_sub(1);
+                    if let Some(export) = data.borrow().as_ref() {
+                        let tab = *tab_index.borrow();
+                        let total_rows = total_rows_for_tab(export, tab);
+                        let max_rows = (*table_view_rows.borrow()).max(1);
+                        let mut selected = table_selected_row.borrow_mut();
+                        if total_rows > 0 && *selected > 0 {
+                            *selected -= 1;
+                        }
+                        let mut offset = row_offset.borrow_mut();
+                        let max_offset = total_rows.saturating_sub(max_rows);
+                        *offset = (*selected).min(max_offset);
+                    }
                 }
                 ratzilla::event::KeyCode::Down => {
-                    let mut offset = row_offset.borrow_mut();
-                    *offset = (*offset + 1).min(2000);
+                    if let Some(export) = data.borrow().as_ref() {
+                        let tab = *tab_index.borrow();
+                        let total_rows = total_rows_for_tab(export, tab);
+                        let max_rows = (*table_view_rows.borrow()).max(1);
+                        let mut selected = table_selected_row.borrow_mut();
+                        if total_rows > 0 && *selected + 1 < total_rows {
+                            *selected += 1;
+                        }
+                        let mut offset = row_offset.borrow_mut();
+                        let max_offset = total_rows.saturating_sub(max_rows);
+                        *offset = selected
+                            .saturating_sub(max_rows.saturating_sub(1))
+                            .min(max_offset);
+                    }
+                }
+                ratzilla::event::KeyCode::PageUp => {
+                    if let Some(export) = data.borrow().as_ref() {
+                        let tab = *tab_index.borrow();
+                        let total_rows = total_rows_for_tab(export, tab);
+                        let max_rows = (*table_view_rows.borrow()).max(1);
+                        let mut selected = table_selected_row.borrow_mut();
+                        *selected = selected.saturating_sub(max_rows);
+                        let mut offset = row_offset.borrow_mut();
+                        let max_offset = total_rows.saturating_sub(max_rows);
+                        *offset = (*selected).min(max_offset);
+                    }
+                }
+                ratzilla::event::KeyCode::PageDown => {
+                    if let Some(export) = data.borrow().as_ref() {
+                        let tab = *tab_index.borrow();
+                        let total_rows = total_rows_for_tab(export, tab);
+                        let max_rows = (*table_view_rows.borrow()).max(1);
+                        let mut selected = table_selected_row.borrow_mut();
+                        if total_rows > 0 {
+                            *selected = (*selected + max_rows).min(total_rows - 1);
+                        }
+                        let mut offset = row_offset.borrow_mut();
+                        let max_offset = total_rows.saturating_sub(max_rows);
+                        *offset = selected
+                            .saturating_sub(max_rows.saturating_sub(1))
+                            .min(max_offset);
+                    }
                 }
                 ratzilla::event::KeyCode::Char(' ') => {
                     let mut state = animation_state.borrow_mut();
@@ -150,17 +241,40 @@ fn main() -> io::Result<()> {
                     state.row = 0;
                     state.detail_open = false;
                 }
+                ratzilla::event::KeyCode::Enter => {
+                    if let Some(export) = data.borrow().as_ref() {
+                        let tab = *tab_index.borrow();
+                        let selected = *table_selected_row.borrow();
+                        let total_rows = total_rows_for_tab(export, tab);
+                        if selected < total_rows {
+                            let mut detail = table_detail_state.borrow_mut();
+                            detail.active = true;
+                            detail.row = selected;
+                            detail.kind = match tab {
+                                0 => TableDetailKind::RecentBlip,
+                                1 => TableDetailKind::AllBlip,
+                                _ => TableDetailKind::Adr,
+                            };
+                        }
+                    }
+                }
                 ratzilla::event::KeyCode::Char('1') => {
                     *tab_index.borrow_mut() = 0;
                     *row_offset.borrow_mut() = 0;
+                    *table_selected_row.borrow_mut() = 0;
+                    table_detail_state.borrow_mut().active = false;
                 }
                 ratzilla::event::KeyCode::Char('2') => {
                     *tab_index.borrow_mut() = 1;
                     *row_offset.borrow_mut() = 0;
+                    *table_selected_row.borrow_mut() = 0;
+                    table_detail_state.borrow_mut().active = false;
                 }
                 ratzilla::event::KeyCode::Char('3') => {
                     *tab_index.borrow_mut() = 2;
                     *row_offset.borrow_mut() = 0;
+                    *table_selected_row.borrow_mut() = 0;
+                    table_detail_state.borrow_mut().active = false;
                 }
                 _ => {}
             }
@@ -201,12 +315,15 @@ fn main() -> io::Result<()> {
             let state = DashboardState {
                 tab_index: *tab_index.borrow(),
                 row_offset: *row_offset.borrow(),
+                table_selected_row: *table_selected_row.borrow(),
+                table_detail: *table_detail_state.borrow(),
                 animation_counter: animation.counter,
                 animation_paused: animation.paused,
                 search_state: search_state.borrow().clone(),
             };
 
-            render_dashboard(export, &state, f, inner);
+            let view_rows = render_dashboard(export, &state, f, inner);
+            *table_view_rows.borrow_mut() = view_rows.max(1);
 
             if state.search_state.active {
                 // Clear entire area behind popup to create solid modal overlay
@@ -223,6 +340,10 @@ fn main() -> io::Result<()> {
                     render_search_detail_popup(export, &state.search_state, f, inner);
                 }
             }
+
+            if state.table_detail.active {
+                render_table_detail_popup(export, &state.table_detail, f, inner);
+            }
         } else {
             let paragraph = Paragraph::new(Text::from(TextLine::from("Loading radar.json...")))
                 .alignment(Alignment::Center);
@@ -238,7 +359,7 @@ fn render_dashboard(
     state: &DashboardState,
     f: &mut ratzilla::ratatui::Frame<'_>,
     area: Rect,
-) {
+) -> usize {
     let main_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -271,10 +392,11 @@ fn render_dashboard(
         export,
         state.tab_index,
         state.row_offset,
+        state.table_selected_row,
         state.animation_paused,
         f,
         main_layout[3],
-    );
+    )
 }
 
 fn render_header(
@@ -661,15 +783,31 @@ fn render_search_detail_popup(
     f.render_widget(content, inner);
 }
 
-fn build_blip_detail_lines<'a>(
-    export: &'a RadarExport,
-    search_state: &'a SearchState,
-) -> Vec<TextLine<'a>> {
+fn build_blip_detail_lines(
+    export: &RadarExport,
+    search_state: &SearchState,
+) -> Vec<TextLine<'static>> {
     let blip_matches = filter_blips(export, search_state);
     let Some(blip) = blip_matches.get(search_state.row) else {
         return vec![TextLine::from("No blip selected")];
     };
 
+    blip_detail_lines(blip)
+}
+
+fn build_adr_detail_lines(
+    export: &RadarExport,
+    search_state: &SearchState,
+) -> Vec<TextLine<'static>> {
+    let adr_matches = filter_adrs(export, search_state);
+    let Some(adr) = adr_matches.get(search_state.row) else {
+        return vec![TextLine::from("No ADR selected")];
+    };
+
+    adr_detail_lines(adr)
+}
+
+fn blip_detail_lines(blip: &RadarBlip) -> Vec<TextLine<'static>> {
     vec![
         TextLine::from(Span::styled(
             blip.name.clone(),
@@ -700,15 +838,7 @@ fn build_blip_detail_lines<'a>(
     ]
 }
 
-fn build_adr_detail_lines<'a>(
-    export: &'a RadarExport,
-    search_state: &'a SearchState,
-) -> Vec<TextLine<'a>> {
-    let adr_matches = filter_adrs(export, search_state);
-    let Some(adr) = adr_matches.get(search_state.row) else {
-        return vec![TextLine::from("No ADR selected")];
-    };
-
+fn adr_detail_lines(adr: &RadarAdr) -> Vec<TextLine<'static>> {
     vec![
         TextLine::from(Span::styled(
             adr.title.clone(),
@@ -723,6 +853,60 @@ fn build_adr_detail_lines<'a>(
     ]
 }
 
+fn render_table_detail_popup(
+    export: &RadarExport,
+    detail: &TableDetailState,
+    f: &mut ratzilla::ratatui::Frame<'_>,
+    area: Rect,
+) {
+    let popup_area = Rect {
+        x: area.x + (area.width / 2).saturating_sub(area.width / 4),
+        y: area.y + (area.height / 2).saturating_sub(area.height / 4),
+        width: area.width / 2,
+        height: area.height / 2,
+    };
+
+    let bg = Style::default().fg(Color::White).bg(Color::Black);
+    let clear_lines: Vec<TextLine> = (0..popup_area.height)
+        .map(|_| TextLine::from(Span::styled(" ".repeat(popup_area.width as usize), bg)))
+        .collect();
+    f.render_widget(Paragraph::new(Text::from(clear_lines)), popup_area);
+
+    let block = Block::default()
+        .title("Details")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .style(bg);
+    f.render_widget(block, popup_area);
+
+    let inner = popup_area.inner(Margin::new(1, 1));
+    let lines = match detail.kind {
+        TableDetailKind::RecentBlip => {
+            let mut blips = export.blips.clone();
+            blips.sort_by(|a, b| b.created.cmp(&a.created));
+            blips
+                .get(detail.row)
+                .map(blip_detail_lines)
+                .unwrap_or_else(|| vec![TextLine::from("No blip selected")])
+        }
+        TableDetailKind::AllBlip => export
+            .blips
+            .get(detail.row)
+            .map(blip_detail_lines)
+            .unwrap_or_else(|| vec![TextLine::from("No blip selected")]),
+        TableDetailKind::Adr => export
+            .adrs
+            .get(detail.row)
+            .map(adr_detail_lines)
+            .unwrap_or_else(|| vec![TextLine::from("No ADR selected")]),
+    };
+
+    let content = Paragraph::new(Text::from(lines))
+        .style(Style::default().bg(Color::Black))
+        .wrap(Wrap { trim: true });
+    f.render_widget(content, inner);
+}
+
 fn render_gap(f: &mut ratzilla::ratatui::Frame<'_>, area: Rect) {
     let paragraph = Paragraph::new("")
         .alignment(Alignment::Center)
@@ -730,14 +914,23 @@ fn render_gap(f: &mut ratzilla::ratatui::Frame<'_>, area: Rect) {
     f.render_widget(paragraph, area);
 }
 
+fn total_rows_for_tab(export: &RadarExport, tab_index: usize) -> usize {
+    match tab_index {
+        0 | 1 => export.blips.len(),
+        2 => export.adrs.len(),
+        _ => 0,
+    }
+}
+
 fn render_footer(
     export: &RadarExport,
     tab_index: usize,
     row_offset: usize,
+    selected_row: usize,
     animation_paused: bool,
     f: &mut ratzilla::ratatui::Frame<'_>,
     area: Rect,
-) {
+) -> usize {
     let total_blips = export.blips.len();
     let total_adrs = export.adrs.len();
 
@@ -801,12 +994,24 @@ fn render_footer(
 
     let table_area = layout[3];
 
+    let desired_rows = match tab_index {
+        0 => 8,
+        _ => 18,
+    };
+    // Table includes a header row plus a spacer row before data rows.
+    // Keep scrolling math based on visible data rows only.
+    let view_rows = desired_rows
+        .min(table_area.height.saturating_sub(2) as usize)
+        .max(1);
+
     match tab_index {
-        0 => render_recent_blips(export, row_offset, f, table_area),
-        1 => render_all_blips(export, row_offset, f, table_area),
-        2 => render_all_adrs(export, row_offset, f, table_area),
+        0 => render_recent_blips(export, row_offset, selected_row, view_rows, f, table_area),
+        1 => render_all_blips(export, row_offset, selected_row, view_rows, f, table_area),
+        2 => render_all_adrs(export, row_offset, selected_row, view_rows, f, table_area),
         _ => {}
     }
+
+    view_rows
 }
 
 fn render_radar_panel(
@@ -1177,27 +1382,32 @@ fn render_ring_chart(export: &RadarExport, f: &mut ratzilla::ratatui::Frame<'_>,
 fn render_recent_blips(
     export: &RadarExport,
     row_offset: usize,
+    selected_row: usize,
+    view_rows: usize,
     f: &mut ratzilla::ratatui::Frame<'_>,
     area: Rect,
 ) {
     let mut blips = export.blips.clone();
     blips.sort_by(|a, b| b.created.cmp(&a.created));
 
-    render_blip_rows(&blips, row_offset, f, area, 8);
+    render_blip_rows(&blips, row_offset, selected_row, f, area, view_rows);
 }
 
 fn render_all_blips(
     export: &RadarExport,
     row_offset: usize,
+    selected_row: usize,
+    view_rows: usize,
     f: &mut ratzilla::ratatui::Frame<'_>,
     area: Rect,
 ) {
-    render_blip_rows(&export.blips, row_offset, f, area, 18);
+    render_blip_rows(&export.blips, row_offset, selected_row, f, area, view_rows);
 }
 
 fn render_blip_rows(
     blips: &[RadarBlip],
     row_offset: usize,
+    selected_row: usize,
     f: &mut ratzilla::ratatui::Frame<'_>,
     area: Rect,
     max_rows: usize,
@@ -1231,20 +1441,37 @@ fn render_blip_rows(
         Cell::from(" "),
         Cell::from(" "),
     ]))
-    .chain(blips.iter().skip(row_offset).take(max_rows).map(|blip| {
-        Row::new(vec![
-            Cell::from(blip.name.clone()),
-            Cell::from(
-                blip.quadrant
-                    .clone()
-                    .unwrap_or_else(|| "(none)".to_string()),
-            ),
-            Cell::from(blip.ring.clone().unwrap_or_else(|| "(none)".to_string())),
-            Cell::from(blip.tag.clone().unwrap_or_default()),
-            Cell::from(if blip.has_adr { "Yes" } else { "No" }),
-        ])
-        .style(Style::default().fg(Color::White))
-    }));
+    .chain(
+        blips
+            .iter()
+            .skip(row_offset)
+            .take(max_rows)
+            .enumerate()
+            .map(|(index, blip)| {
+                let data_index = row_offset + index;
+                let is_selected = data_index == selected_row;
+                let style = if is_selected {
+                    Style::default()
+                        .fg(Color::White)
+                        .bg(Color::Rgb(0, 0, 238))
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+                Row::new(vec![
+                    Cell::from(blip.name.clone()),
+                    Cell::from(
+                        blip.quadrant
+                            .clone()
+                            .unwrap_or_else(|| "(none)".to_string()),
+                    ),
+                    Cell::from(blip.ring.clone().unwrap_or_else(|| "(none)".to_string())),
+                    Cell::from(blip.tag.clone().unwrap_or_default()),
+                    Cell::from(if blip.has_adr { "Yes" } else { "No" }),
+                ])
+                .style(style)
+            }),
+    );
 
     let table = Table::new(
         rows,
@@ -1278,6 +1505,8 @@ fn render_blip_rows(
 fn render_all_adrs(
     export: &RadarExport,
     row_offset: usize,
+    selected_row: usize,
+    view_rows: usize,
     f: &mut ratzilla::ratatui::Frame<'_>,
     area: Rect,
 ) {
@@ -1308,15 +1537,33 @@ fn render_all_adrs(
         Cell::from(" "),
         Cell::from(" "),
     ]))
-    .chain(export.adrs.iter().skip(row_offset).take(18).map(|adr| {
-        Row::new(vec![
-            Cell::from(adr.title.clone()),
-            Cell::from(adr.blip_name.clone()),
-            Cell::from(adr.status.clone()),
-            Cell::from(adr.timestamp.clone()),
-        ])
-        .style(Style::default().fg(Color::White))
-    }));
+    .chain(
+        export
+            .adrs
+            .iter()
+            .skip(row_offset)
+            .take(view_rows)
+            .enumerate()
+            .map(|(index, adr)| {
+                let data_index = row_offset + index;
+                let is_selected = data_index == selected_row;
+                let style = if is_selected {
+                    Style::default()
+                        .fg(Color::White)
+                        .bg(Color::Rgb(0, 0, 238))
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+                Row::new(vec![
+                    Cell::from(adr.title.clone()),
+                    Cell::from(adr.blip_name.clone()),
+                    Cell::from(adr.status.clone()),
+                    Cell::from(adr.timestamp.clone()),
+                ])
+                .style(style)
+            }),
+    );
 
     let table = Table::new(
         rows,
@@ -1334,7 +1581,7 @@ fn render_all_adrs(
 
     let mut scrollbar_state = ScrollbarState::new(export.adrs.len())
         .position(row_offset)
-        .viewport_content_length(18.min(area.height.saturating_sub(1) as usize));
+        .viewport_content_length(view_rows.min(area.height.saturating_sub(1) as usize));
     let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
         .thumb_style(Style::default().fg(Color::Rgb(0, 0, 238)));
     let scroll_area = Rect {
