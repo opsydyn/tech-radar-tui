@@ -98,13 +98,13 @@ jobs:
 
       - name: Upload asset to draft release (non-Windows)
         if: matrix.os != 'windows-latest'
-        run: gh release upload "${{ github.ref_name }}" "dist/${{ matrix.artifact }}" --clobber
+        run: gh release upload "${{ github.ref_name }}" "dist/${{ matrix.artifact }}" --clobber --repo "${{ github.repository }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload asset to draft release (Windows)
         if: matrix.os == 'windows-latest'
-        run: gh release upload "${{ github.ref_name }}" "dist/${{ matrix.artifact }}" --clobber
+        run: gh release upload "${{ github.ref_name }}" "dist/${{ matrix.artifact }}" --clobber --repo "${{ github.repository }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -113,11 +113,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Publish release
-        run: gh release edit "${{ github.ref_name }}" --draft=false
+        run: gh release edit "${{ github.ref_name }}" --draft=false --repo "${{ github.repository }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Verify release is published
-        run: gh release view "${{ github.ref_name }}"
+        run: gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
