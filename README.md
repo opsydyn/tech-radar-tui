@@ -23,7 +23,7 @@ Keyboard-driven terminal UI for creating Architectural Decision Records (ADRs) a
 - Quadrant + ring selection with live radar placement
 - Charts and radar visualizations
 - Headless stats mode for CI or scripts
-- Built with [Ratatui](https://ratatui.rs/) ([GitHub](https://github.com/ratatui/ratatui))
+- Built with the mighty [Ratatui](https://ratatui.rs/) ([GitHub](https://github.com/ratatui/ratatui))
 - Inspired by the [Thoughtworks Technology Radar](https://www.thoughtworks.com/radar)
 
 ## Team workflow
@@ -115,7 +115,7 @@ ratatui_adr-gen --debug
 
 ## Web radar (Ratzilla)
 
-A browser-based view of the Tech Radar built with Ratzilla (Ratatui compiled to WebAssembly). It renders the same radar, charts, and tables, powered by the `--export` JSON output.
+A browser-based view of the Tech Radar built with the mega mighty Ratzilla (Ratatui poweered, compiled to WebAssembly). It renders similar radar, charts, and tables, powered by the `--export` JSON output.
 
 ![Ratzilla web radar](ratzilla.png)
 

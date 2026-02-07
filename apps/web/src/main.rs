@@ -49,8 +49,132 @@ struct RadarAdr {
 
 struct AnimationState {
     counter: f64,
-    last_tick: f64,
-    paused: bool,
+    last_tick: Option<f64>,
+    mode: AnimationMode,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AnimationMode {
+    Running,
+    Paused,
+}
+
+const ANIMATION_SWEEP_SPEED: f64 = 1.4;
+const ANIMATION_MAX_FRAME_DELTA: f64 = 0.25;
+const ANIMATION_FULL_ROTATION: f64 = 2.0 * std::f64::consts::PI;
+
+fn advance_animation_counter(
+    counter: f64,
+    last_tick: Option<f64>,
+    now_seconds: f64,
+    mode: AnimationMode,
+) -> (f64, Option<f64>) {
+    let delta = last_tick
+        .map(|last| (now_seconds - last).max(0.0).min(ANIMATION_MAX_FRAME_DELTA))
+        .unwrap_or(0.0);
+
+    let next_counter = if mode == AnimationMode::Running {
+        (counter + delta * ANIMATION_SWEEP_SPEED).rem_euclid(ANIMATION_FULL_ROTATION)
+    } else {
+        counter.rem_euclid(ANIMATION_FULL_ROTATION)
+    };
+
+    (next_counter, Some(now_seconds))
+}
+
+impl AnimationState {
+    fn new() -> Self {
+        Self {
+            counter: 0.0,
+            last_tick: None,
+            mode: AnimationMode::Running,
+        }
+    }
+
+    fn tick(&mut self, now_seconds: f64) {
+        let (next_counter, next_tick) =
+            advance_animation_counter(self.counter, self.last_tick, now_seconds, self.mode);
+        self.counter = next_counter;
+        self.last_tick = next_tick;
+    }
+
+    fn toggle_mode(&mut self) {
+        self.mode = match self.mode {
+            AnimationMode::Running => AnimationMode::Paused,
+            AnimationMode::Paused => AnimationMode::Running,
+        };
+    }
+
+    fn is_paused(&self) -> bool {
+        self.mode == AnimationMode::Paused
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        advance_animation_counter, AnimationMode, ANIMATION_FULL_ROTATION, ANIMATION_SWEEP_SPEED,
+    };
+
+    fn assert_close(actual: f64, expected: f64) {
+        let diff = (actual - expected).abs();
+        assert!(
+            diff < 1e-9,
+            "expected {expected}, got {actual}, diff {diff}"
+        );
+    }
+
+    #[test]
+    fn first_tick_initializes_time_without_advancing() {
+        let start_counter = 1.2345;
+        let (counter, last_tick) =
+            advance_animation_counter(start_counter, None, 10.0, AnimationMode::Running);
+
+        assert_close(counter, start_counter);
+        assert_eq!(last_tick, Some(10.0));
+    }
+
+    #[test]
+    fn running_mode_advances_counter_and_wraps() {
+        let start_counter = ANIMATION_FULL_ROTATION - 0.1;
+        let (counter, last_tick) =
+            advance_animation_counter(start_counter, Some(4.0), 4.2, AnimationMode::Running);
+
+        let expected =
+            (start_counter + 0.2 * ANIMATION_SWEEP_SPEED).rem_euclid(ANIMATION_FULL_ROTATION);
+        assert_close(counter, expected);
+        assert_eq!(last_tick, Some(4.2));
+    }
+
+    #[test]
+    fn paused_mode_keeps_counter_stable_but_updates_clock() {
+        let start_counter = 2.25;
+        let (counter, last_tick) =
+            advance_animation_counter(start_counter, Some(1.0), 1.2, AnimationMode::Paused);
+
+        assert_close(counter, start_counter);
+        assert_eq!(last_tick, Some(1.2));
+    }
+
+    #[test]
+    fn large_frame_gap_is_clamped() {
+        let start_counter = 0.0;
+        let (counter, _) =
+            advance_animation_counter(start_counter, Some(3.0), 30.0, AnimationMode::Running);
+
+        let expected = 0.25 * ANIMATION_SWEEP_SPEED;
+        assert_close(counter, expected);
+    }
+
+    #[test]
+    fn backwards_time_does_not_reverse_animation() {
+        let start_counter = 3.5;
+        let (counter, last_tick) =
+            advance_animation_counter(start_counter, Some(10.0), 9.0, AnimationMode::Running);
+
+        assert_close(counter, start_counter);
+        assert_eq!(last_tick, Some(9.0));
+    }
 }
 
 #[derive(Clone)]
@@ -108,11 +232,7 @@ fn main() -> io::Result<()> {
     let row_offset = Rc::new(RefCell::new(0_usize));
     let table_selected_row = Rc::new(RefCell::new(0_usize));
     let table_view_rows = Rc::new(RefCell::new(1_usize));
-    let animation_state = Rc::new(RefCell::new(AnimationState {
-        counter: 0.0,
-        last_tick: 0.0,
-        paused: false,
-    }));
+    let animation_state = Rc::new(RefCell::new(AnimationState::new()));
     let search_state = Rc::new(RefCell::new(SearchState {
         query: String::new(),
         active: false,
@@ -231,7 +351,7 @@ fn main() -> io::Result<()> {
                 }
                 ratzilla::event::KeyCode::Char(' ') => {
                     let mut state = animation_state.borrow_mut();
-                    state.paused = !state.paused;
+                    state.toggle_mode();
                 }
                 ratzilla::event::KeyCode::Char('s') => {
                     let mut state = search_state.borrow_mut();
@@ -288,14 +408,7 @@ fn main() -> io::Result<()> {
             .unwrap_or_default();
 
         let mut animation = animation_state.borrow_mut();
-        let delta = (now - animation.last_tick).max(0.0);
-        animation.last_tick = now;
-        if !animation.paused {
-            animation.counter += delta * 1.4;
-            if animation.counter > 2.0 * std::f64::consts::PI {
-                animation.counter -= 2.0 * std::f64::consts::PI;
-            }
-        }
+        animation.tick(now);
 
         let area = f.area();
         let block = Block::default()
@@ -318,7 +431,7 @@ fn main() -> io::Result<()> {
                 table_selected_row: *table_selected_row.borrow(),
                 table_detail: *table_detail_state.borrow(),
                 animation_counter: animation.counter,
-                animation_paused: animation.paused,
+                animation_paused: animation.is_paused(),
                 search_state: search_state.borrow().clone(),
             };
 
